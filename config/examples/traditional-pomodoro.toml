@@ -1,0 +1,210 @@
+# Traditional Pomodoro Technique Configuration
+#
+# This configuration follows the original Pomodoro Technique
+# as developed by Francesco Cirillo in the late 1980s.
+#
+# Core principles:
+# - 25-minute focused work sessions (pomodoros)
+# - 5-minute short breaks
+# - 15-30 minute long breaks after 4 pomodoros
+# - No interruptions during sessions
+# - Manual session/break management
+# - Minimal technological distractions
+
+[session]
+# Classic Pomodoro timing
+duration = 25                      # The standard 25-minute pomodoro
+short_break_duration = 5           # 5-minute short breaks
+long_break_duration = 15           # 15-minute long breaks
+sessions_until_long_break = 4      # Long break every 4 pomodoros
+
+# Traditional manual control
+auto_start_breaks = false          # Manual break initiation
+auto_start_sessions = false        # Manual session initiation  
+allow_break_skip = false           # Enforce break discipline
+session_end_sound = true           # Audible session completion
+
+# No additional features beyond the basic technique
+gentle_transitions = false         # Immediate transitions
+recovery_prompts = false           # No session recovery
+focus_reminders = false            # No additional reminders
+
+[audio]
+# Minimal audio - traditional approach
+sound_enabled = true
+volume = 0.8                       # Clear notification volume
+
+# No ambient sounds in traditional pomodoro
+ambient_enabled = false
+ambient_sound = "none"
+ambient_volume = 0.0
+
+# Simple, clear notifications only
+notification_enabled = true
+notification_sound = "bell"        # Classic bell sound
+notification_volume = 0.8
+session_start_sound = false        # Silent session start
+session_end_sound = true          # Clear session end signal
+break_start_sound = false         # Silent break start
+break_end_sound = true            # Clear break end signal
+
+[ui]
+# Clean, minimal interface
+theme = "light"                    # Traditional clean appearance
+show_seconds = false               # Minutes focus, not seconds
+ascii_art_timer = false            # Simple numeric display
+progress_bar_style = "minimal"     # Clean progress indication
+
+# Essential information only
+show_session_count = true          # Track pomodoro count
+show_daily_goal = false            # No daily pressure
+show_productivity_score = false    # No scoring system
+show_time_of_day = false          # Focus on session time only
+
+# Traditional layout
+compact_mode = true                # Simple, focused layout
+split_view = false                 # Single focus area
+tab_navigation = false             # Linear workflow
+
+# No daily goals in traditional approach
+daily_session_goal = 0             # No daily targets
+weekly_session_goal = 0            # No weekly targets
+goal_reminder = false              # No goal pressure
+
+# Minimal visual features
+low_distraction_mode = true        # Maximum focus
+focus_mode_highlighting = false    # No highlighting
+gentle_animations = false          # No animations
+color_coding = false               # Monochrome approach
+
+[integrations]
+# No integrations in traditional pomodoro
+github_enabled = false
+github_sync_issues = false
+github_enhance_commits = false
+github_update_status = false
+
+slack_enabled = false
+slack_update_status = false
+slack_notify_completion = false
+
+git_commit_enhancement = false
+git_auto_commit_on_complete = false
+
+# No website blocking in original technique
+website_blocking = false
+unblock_during_breaks = false
+block_subdomains = false
+blocked_websites = []
+
+[statistics]
+# Basic tracking only
+track_detailed_stats = false       # Minimal statistics
+track_break_usage = true           # Monitor break adherence
+track_productivity_patterns = false # No pattern analysis
+track_focus_quality = false        # No quality metrics
+
+# Privacy-focused
+anonymize_task_titles = true       # Focus on technique, not content
+export_include_descriptions = false # Minimal exports
+
+# Standard retention
+max_history_days = 90              # 3 months of data
+auto_archive_old_data = true       # Automatic cleanup
+
+[preferences]
+# Manual engagement
+auto_start_on_boot = false         # Intentional daily start
+restore_session_on_startup = false # Fresh start each time
+check_for_updates = false          # Stable version focus
+
+# Standard backup
+auto_backup = false                # Manual backup control
+backup_frequency_days = 30         # Monthly backups
+max_backup_count = 3               # Minimal backup retention
+
+# Standard performance
+enable_query_cache = false         # Fresh data always
+cache_duration_minutes = 0         # No caching
+optimize_database_on_startup = true # Clean database state
+
+# Minimal notifications
+desktop_notifications = false      # No external distractions
+notification_persistence = 3       # Brief notifications
+
+# Standard accessibility
+high_contrast = false
+large_fonts = false
+screen_reader_support = false
+reduce_motion = true               # Minimal motion
+
+# Standard settings
+debug_mode = false
+log_level = "warn"                 # Minimal logging
+performance_monitoring = false
+
+# Basic security
+encrypt_sensitive_data = false     # No sensitive integrations
+secure_delete = false              # Standard deletion
+
+# Traditional Pomodoro rules and reminders
+[pomodoro_rules]
+# Classic rules to display/enforce
+enforce_no_interruptions = true    # Strict interruption handling
+external_interruption_handling = "defer" # Defer all external interruptions
+internal_interruption_handling = "note"  # Note internal distractions
+
+# Classic workflow
+session_preparation = [
+    "Choose a task to work on",
+    "Estimate how many pomodoros it will take", 
+    "Set the timer to 25 minutes",
+    "Work on the task until the timer rings",
+    "Take a short break (5 minutes)",
+    "After 4 pomodoros, take a longer break (15-30 minutes)"
+]
+
+# Traditional tracking
+track_interruptions = true         # Count interruptions per pomodoro
+track_task_estimates = true        # Compare estimates vs. actual
+track_completion_rate = true       # Successful pomodoro completion
+
+# No modern features
+[disabled_features]
+# Explicitly disable modern additions
+web_integrations = false
+ai_suggestions = false
+habit_tracking = false
+mood_tracking = false
+focus_music = false
+environment_detection = false
+calendar_integration = false
+email_integration = false
+social_features = false
+gamification = false
+
+# Display classic pomodoro information
+[help_text]
+technique_description = """
+The Pomodoro Technique is a time management method developed by Francesco Cirillo in the late 1980s. The technique uses a timer to break down work into intervals, traditionally 25 minutes in length, separated by short breaks.
+
+Basic steps:
+1. Choose a task to be accomplished
+2. Set the timer to 25 minutes  
+3. Work on the task until the timer rings
+4. Take a 5-minute break
+5. Every four pomodoros, take a longer break (15-30 minutes)
+
+The technique is named after the tomato-shaped kitchen timer that Cirillo used as a university student.
+"""
+
+core_principles = [
+    "Work in 25-minute focused sessions",
+    "Take regular 5-minute breaks", 
+    "Take longer breaks every 4 sessions",
+    "No interruptions during a pomodoro",
+    "If interrupted, the pomodoro is void",
+    "Track completed pomodoros",
+    "Estimate tasks in pomodoros",
+    "Focus on one task per pomodoro"
+]

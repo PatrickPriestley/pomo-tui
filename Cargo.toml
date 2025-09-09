@@ -1,0 +1,35 @@
+[package]
+name = "pomo-tui"
+version = "0.1.0"
+edition = "2021"
+description = "Simple Pomodoro timer with breathing exercises in terminal"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT"
+repository = "https://github.com/pomo-tui/pomo-tui"
+homepage = "https://github.com/pomo-tui/pomo-tui"
+readme = "README.md"
+keywords = ["pomodoro", "productivity", "tui", "terminal", "breathing"]
+categories = ["command-line-utilities"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+debug = true
+opt-level = 0
+
+[dependencies]
+ratatui = "0.26"
+crossterm = "0.27"
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"] }
+chrono = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "pomo-tui"
+path = "src/main.rs"

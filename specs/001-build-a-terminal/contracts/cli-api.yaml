@@ -1,0 +1,535 @@
+openapi: 3.0.0
+info:
+  title: Pomo-TUI CLI API
+  version: 0.1.0
+  description: Command-line interface contracts for the ADHD-focused Pomodoro terminal application
+
+paths:
+  /cli/task:
+    post:
+      summary: Create a new task
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskInput'
+      responses:
+        '201':
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+    
+    get:
+      summary: List all tasks
+      operationId: listTasks
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, active, completed, archived]
+        - name: priority
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 3
+      responses:
+        '200':
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+
+  /cli/task/{id}:
+    get:
+      summary: Get a specific task
+      operationId: getTask
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          description: Task not found
+    
+    put:
+      summary: Update a task
+      operationId: updateTask
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskInput'
+      responses:
+        '200':
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+    
+    delete:
+      summary: Delete a task
+      operationId: deleteTask
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Task deleted
+        '404':
+          description: Task not found
+
+  /cli/session:
+    post:
+      summary: Start a new session
+      operationId: startSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - task_id
+              properties:
+                task_id:
+                  type: integer
+                duration:
+                  type: integer
+                  default: 1500
+      responses:
+        '201':
+          description: Session started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '409':
+          description: Another session is already active
+    
+    get:
+      summary: Get current session
+      operationId: getCurrentSession
+      responses:
+        '200':
+          description: Current session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          description: No active session
+
+  /cli/session/{id}/pause:
+    post:
+      summary: Pause a session
+      operationId: pauseSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Session paused
+        '404':
+          description: Session not found
+        '409':
+          description: Session not active
+
+  /cli/session/{id}/resume:
+    post:
+      summary: Resume a paused session
+      operationId: resumeSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Session resumed
+        '404':
+          description: Session not found
+        '409':
+          description: Session not paused
+
+  /cli/session/{id}/complete:
+    post:
+      summary: Complete a session
+      operationId: completeSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Session completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          description: Session not found
+
+  /cli/session/{id}/abandon:
+    post:
+      summary: Abandon a session
+      operationId: abandonSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Session abandoned
+        '404':
+          description: Session not found
+
+  /cli/break:
+    post:
+      summary: Start a break
+      operationId: startBreak
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - session_id
+                - break_type
+              properties:
+                session_id:
+                  type: integer
+                break_type:
+                  type: string
+                  enum: [short, long]
+                activity_type:
+                  type: string
+                  enum: [breathing, movement, rest, custom]
+      responses:
+        '201':
+          description: Break started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Break'
+    
+    get:
+      summary: Get current break
+      operationId: getCurrentBreak
+      responses:
+        '200':
+          description: Current break
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Break'
+        '404':
+          description: No active break
+
+  /cli/break/{id}/skip:
+    post:
+      summary: Skip a break
+      operationId: skipBreak
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Break skipped
+        '404':
+          description: Break not found
+
+  /cli/statistics:
+    get:
+      summary: Get statistics
+      operationId: getStatistics
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [today, week, month, all]
+            default: today
+      responses:
+        '200':
+          description: Statistics data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Statistics'
+
+  /cli/preferences:
+    get:
+      summary: Get preferences
+      operationId: getPreferences
+      responses:
+        '200':
+          description: Current preferences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preferences'
+    
+    put:
+      summary: Update preferences
+      operationId: updatePreferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Preferences'
+      responses:
+        '200':
+          description: Preferences updated
+
+  /cli/export:
+    get:
+      summary: Export data
+      operationId: exportData
+      parameters:
+        - name: format
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [json, csv, markdown]
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Exported data
+          content:
+            application/json:
+              schema:
+                type: object
+            text/csv:
+              schema:
+                type: string
+            text/markdown:
+              schema:
+                type: string
+
+components:
+  schemas:
+    TaskInput:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 3
+        estimated_pomodoros:
+          type: integer
+          minimum: 1
+        tags:
+          type: array
+          items:
+            type: string
+
+    Task:
+      allOf:
+        - $ref: '#/components/schemas/TaskInput'
+        - type: object
+          required:
+            - id
+            - status
+            - created_at
+            - updated_at
+          properties:
+            id:
+              type: integer
+            status:
+              type: string
+              enum: [pending, active, completed, archived]
+            completed_pomodoros:
+              type: integer
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+            completed_at:
+              type: string
+              format: date-time
+            github_issue_id:
+              type: string
+            jira_issue_key:
+              type: string
+
+    Session:
+      type: object
+      required:
+        - id
+        - task_id
+        - start_time
+        - planned_duration
+        - status
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        planned_duration:
+          type: integer
+        actual_duration:
+          type: integer
+        status:
+          type: string
+          enum: [active, paused, completed, abandoned]
+        pause_count:
+          type: integer
+        total_pause_duration:
+          type: integer
+
+    Break:
+      type: object
+      required:
+        - id
+        - after_session_id
+        - break_type
+        - planned_duration
+        - start_time
+      properties:
+        id:
+          type: integer
+        after_session_id:
+          type: integer
+        break_type:
+          type: string
+          enum: [short, long]
+        planned_duration:
+          type: integer
+        actual_duration:
+          type: integer
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        skipped:
+          type: boolean
+        activity_type:
+          type: string
+
+    Statistics:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        completed_sessions:
+          type: integer
+        abandoned_sessions:
+          type: integer
+        total_focus_time:
+          type: integer
+        total_break_time:
+          type: integer
+        tasks_completed:
+          type: integer
+        tasks_created:
+          type: integer
+        average_session_duration:
+          type: number
+        longest_focus_streak:
+          type: integer
+        most_productive_hour:
+          type: integer
+
+    Preferences:
+      type: object
+      properties:
+        session_duration:
+          type: integer
+        short_break_duration:
+          type: integer
+        long_break_duration:
+          type: integer
+        sessions_before_long_break:
+          type: integer
+        auto_start_breaks:
+          type: boolean
+        auto_start_sessions:
+          type: boolean
+        enable_sounds:
+          type: boolean
+        ambient_sound:
+          type: string
+        ambient_volume:
+          type: number
+        enable_website_blocking:
+          type: boolean
+        blocked_websites:
+          type: array
+          items:
+            type: string
+        theme:
+          type: string
+        vim_mode_enabled:
+          type: boolean
+        daily_goal_sessions:
+          type: integer

@@ -1,0 +1,19 @@
+[package]
+name = "pomo-tui"
+version = "0.1.0"
+edition = "2021"
+description = "ADHD-focused Pomodoro terminal application (minimal version)"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
+[dependencies]
+# Minimal dependencies for basic functionality
+
+[[bin]]
+name = "pomo-tui"
+path = "src/main.rs"
