@@ -1,0 +1,115 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo lock file (uncomment if this is a library)
+# Cargo.lock
+
+# Local environment variables
+.env
+.env.local
+.env.*.local
+
+# Database files
+data/*.db
+data/*.db-wal
+data/*.db-shm
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+.classpath
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Claude Code specific
+.claude/settings.local.json
+.claude/cache/
+.claude/tmp/
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+.cache/
+
+# Build and release artifacts
+/release/
+/dist/
+*.tar.gz
+*.zip
+*.deb
+*.rpm
+*.pkg
+*.dmg
+
+# Test artifacts
+/test-results/
+/coverage/
+*.profraw
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Profiling and debugging
+*.perf
+*.prof
+/flamegraph*.svg
+perf.data*
+
+# Local configuration overrides
+config/local.*
+*_local.*
+local_*
+
+# Documentation build artifacts
+/book/
+/doc/target/
+
+# macOS specific
+*.DS_Store
+
+# Windows specific
+*.exe
+*.pdb
+*.ilk
+
+# Linux specific
+*~
+
+# Git specific
+*.orig
+*.rej
+
+# Patch files
+*.patch
+*.diff
+
+# Local development databases
+*.db-journal
+
+# Error logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
