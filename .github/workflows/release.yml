@@ -42,7 +42,8 @@ jobs:
             
             ### Homebrew (macOS/Linux)
             ```bash
-            brew install pomo-tui/tap/pomo-tui
+            brew tap PatrickPriestley/tap
+            brew install pomo-tui
             ```
             
             ### Binary Download
@@ -186,18 +187,36 @@ jobs:
     if: "!contains(github.ref, '-')" # Only update for stable releases
     
     steps:
-      - name: Update Homebrew formula
-        uses: actions/github-script@v6
+      - name: Checkout homebrew-tap repo
+        uses: actions/checkout@v4
         with:
-          github-token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          script: |
-            const version = '${{ needs.create-release.outputs.version }}';
-            const repoOwner = 'pomo-tui';
-            const repoName = 'homebrew-tap';
-            
-            // This would typically trigger a separate workflow in the homebrew-tap repo
-            // or use a more sophisticated approach to update the formula
-            console.log(`Would update Homebrew formula to version ${version}`);
+          repository: PatrickPriestley/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Download release tarball and get SHA256
+        run: |
+          version="${{ needs.create-release.outputs.version }}"
+          wget "https://github.com/PatrickPriestley/pomo-tui/archive/v${version}.tar.gz" -O "pomo-tui-${version}.tar.gz"
+          sha256=$(shasum -a 256 "pomo-tui-${version}.tar.gz" | cut -d' ' -f1)
+          echo "RELEASE_SHA256=${sha256}" >> $GITHUB_ENV
+          echo "VERSION=${version}" >> $GITHUB_ENV
+
+      - name: Update Homebrew formula
+        run: |
+          cd homebrew-tap
+          sed -i.bak "s/archive\/v[0-9.]*\.tar\.gz/archive\/v${VERSION}.tar.gz/" Formula/pomo-tui.rb
+          sed -i.bak "s/sha256 \"[^\"]*\"/sha256 \"${RELEASE_SHA256}\"/" Formula/pomo-tui.rb
+          rm Formula/pomo-tui.rb.bak
+
+      - name: Commit and push formula update
+        run: |
+          cd homebrew-tap
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add Formula/pomo-tui.rb
+          git commit -m "Update pomo-tui to v${VERSION}"
+          git push
 
   generate-completions:
     name: Generate Shell Completions
