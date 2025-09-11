@@ -14,6 +14,7 @@ pub struct App {
     mode: AppMode,
     should_quit: bool,
     session_count: u32,
+    break_was_shortened: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -30,6 +31,7 @@ impl App {
             mode: AppMode::Pomodoro,
             should_quit: false,
             session_count: 0,
+            break_was_shortened: false,
         })
     }
 
@@ -79,6 +81,8 @@ impl App {
             KeyCode::Char('r') => self.reset_timer(),
             KeyCode::Char('s') => self.skip_to_break(),
             KeyCode::Char('b') => self.skip_break(),
+            KeyCode::Char('h') => self.shorten_break(),
+            KeyCode::Char('e') => self.extend_break(),
             KeyCode::Char('1') => self.set_breathing_pattern(BreathingPattern::Simple),
             KeyCode::Char('2') => self.set_breathing_pattern(BreathingPattern::Box),
             KeyCode::Char('3') => self.set_breathing_pattern(BreathingPattern::FourSevenEight),
@@ -113,6 +117,40 @@ impl App {
     fn skip_break(&mut self) {
         if self.mode == AppMode::Break {
             self.start_pomodoro();
+        }
+    }
+
+    fn shorten_break(&mut self) {
+        if self.mode == AppMode::Break {
+            let current_duration = self.timer.duration().as_secs();
+            let short_break_duration = 5 * 60; // 5 minutes
+
+            // Only shorten if current duration is longer than short break
+            if current_duration > short_break_duration {
+                self.timer = Timer::new(short_break_duration);
+                self.break_was_shortened = true;
+                // Maintain breathing exercise if present
+                if self.breathing_exercise.is_none() {
+                    self.breathing_exercise =
+                        Some(BreathingExercise::new(BreathingPattern::Simple));
+                }
+            }
+        }
+    }
+
+    fn extend_break(&mut self) {
+        if self.mode == AppMode::Break && self.break_was_shortened {
+            // Check if we're in a break after 4th session (which should be long break)
+            if (self.session_count % 4) == 0 {
+                let long_break_duration = 15 * 60; // 15 minutes
+                self.timer = Timer::new(long_break_duration);
+                self.break_was_shortened = false;
+                // Maintain breathing exercise if present
+                if self.breathing_exercise.is_none() {
+                    self.breathing_exercise =
+                        Some(BreathingExercise::new(BreathingPattern::Simple));
+                }
+            }
         }
     }
 
@@ -156,6 +194,7 @@ impl App {
 
         self.mode = AppMode::Break;
         self.timer = Timer::new(break_duration);
+        self.break_was_shortened = false; // Reset shortened state for new break
         self.breathing_exercise = Some(BreathingExercise::new(BreathingPattern::Simple));
         // Don't auto-start - wait for user to press space
     }
@@ -163,6 +202,7 @@ impl App {
     fn start_pomodoro(&mut self) {
         self.mode = AppMode::Pomodoro;
         self.timer = Timer::new(25 * 60);
+        self.break_was_shortened = false; // Reset shortened state for new pomodoro
         self.breathing_exercise = None;
         // Don't auto-start - wait for user to press space
     }
@@ -181,6 +221,10 @@ impl App {
 
     pub fn session_count(&self) -> u32 {
         self.session_count
+    }
+
+    pub fn break_was_shortened(&self) -> bool {
+        self.break_was_shortened
     }
 }
 
@@ -259,5 +303,266 @@ mod tests {
         app.skip_break();
         assert_eq!(app.session_count(), initial_count + 1);
         assert_eq!(app.mode(), AppMode::Pomodoro);
+    }
+
+    #[test]
+    fn test_shorten_break_reduces_timer_duration() {
+        let mut app = App::new().unwrap();
+
+        // Start a long break (after 4 sessions)
+        app.session_count = 4;
+        app.start_break();
+        assert_eq!(app.mode(), AppMode::Break);
+        assert_eq!(app.timer().duration().as_secs(), 15 * 60); // 15 min long break
+
+        // Shorten the break
+        app.shorten_break();
+
+        // Should reduce to short break duration
+        assert_eq!(app.timer().duration().as_secs(), 5 * 60); // 5 min short break
+        assert_eq!(app.mode(), AppMode::Break); // Should still be in break mode
+        assert_eq!(app.timer().state(), crate::core::timer::TimerState::Idle); // Timer should reset
+    }
+
+    #[test]
+    fn test_shorten_break_only_works_in_break_mode() {
+        let mut app = App::new().unwrap();
+
+        // Start in Pomodoro mode
+        assert_eq!(app.mode(), AppMode::Pomodoro);
+        let original_duration = app.timer().duration();
+
+        // Shorten break should do nothing in Pomodoro mode
+        app.shorten_break();
+        assert_eq!(app.mode(), AppMode::Pomodoro);
+        assert_eq!(app.timer().duration(), original_duration);
+    }
+
+    #[test]
+    fn test_shorten_break_with_short_break_has_no_effect() {
+        let mut app = App::new().unwrap();
+
+        // Start a short break (first session)
+        app.skip_to_break();
+        assert_eq!(app.mode(), AppMode::Break);
+        assert_eq!(app.timer().duration().as_secs(), 5 * 60); // Already 5 min short break
+
+        // Shortening should have no effect since it's already a short break
+        app.shorten_break();
+        assert_eq!(app.timer().duration().as_secs(), 5 * 60); // Still 5 min
+        assert_eq!(app.mode(), AppMode::Break);
+    }
+
+    #[test]
+    fn test_key_handler_shorten_break() {
+        let mut app = App::new().unwrap();
+
+        // Start in long break mode (after 4 sessions)
+        app.session_count = 4;
+        app.start_break();
+        assert_eq!(app.mode(), AppMode::Break);
+        assert_eq!(app.timer().duration().as_secs(), 15 * 60);
+
+        // Press 'h' key to shorten break
+        let key_event = KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE);
+        app.handle_key(key_event);
+
+        // Should shorten to 5 minutes
+        assert_eq!(app.timer().duration().as_secs(), 5 * 60);
+        assert_eq!(app.mode(), AppMode::Break);
+    }
+
+    #[test]
+    fn test_extended_break_automation_complete_workflow() {
+        let mut app = App::new().unwrap();
+
+        // Complete 3 pomodoro sessions (should be short breaks)
+        for i in 1..=3 {
+            app.skip_to_break();
+            assert_eq!(app.session_count(), i);
+            assert_eq!(app.mode(), AppMode::Break);
+            assert_eq!(app.timer().duration().as_secs(), 5 * 60); // Short break
+            app.skip_break(); // Skip to next pomodoro
+        }
+
+        // 4th session should trigger long break (15 min)
+        app.skip_to_break();
+        assert_eq!(app.session_count(), 4);
+        assert_eq!(app.mode(), AppMode::Break);
+        assert_eq!(app.timer().duration().as_secs(), 15 * 60); // Long break
+
+        // Test shortening the long break
+        app.shorten_break();
+        assert_eq!(app.timer().duration().as_secs(), 5 * 60); // Shortened to 5 min
+        assert_eq!(app.mode(), AppMode::Break); // Still in break mode
+
+        // Complete the break cycle
+        app.skip_break();
+        assert_eq!(app.mode(), AppMode::Pomodoro);
+
+        // Next break should be short again (cycle reset)
+        app.skip_to_break();
+        assert_eq!(app.session_count(), 5);
+        assert_eq!(app.timer().duration().as_secs(), 5 * 60); // Back to short break
+    }
+
+    #[test]
+    fn test_extend_break_restores_full_duration() {
+        let mut app = App::new().unwrap();
+
+        // Start a long break (after 4 sessions)
+        app.session_count = 4;
+        app.start_break();
+        assert_eq!(app.timer().duration().as_secs(), 15 * 60); // 15 min long break
+        assert!(!app.break_was_shortened());
+
+        // Shorten the break
+        app.shorten_break();
+        assert_eq!(app.timer().duration().as_secs(), 5 * 60); // 5 min short break
+        assert!(app.break_was_shortened());
+
+        // Extend the break back to full duration
+        app.extend_break();
+        assert_eq!(app.timer().duration().as_secs(), 15 * 60); // Back to 15 min
+        assert!(!app.break_was_shortened()); // Should reset shortened flag
+        assert_eq!(app.mode(), AppMode::Break); // Still in break mode
+    }
+
+    #[test]
+    fn test_extend_break_only_works_on_shortened_breaks() {
+        let mut app = App::new().unwrap();
+
+        // Start a regular long break (not shortened)
+        app.session_count = 4;
+        app.start_break();
+        assert_eq!(app.timer().duration().as_secs(), 15 * 60);
+        assert!(!app.break_was_shortened());
+
+        // Try to extend - should have no effect
+        app.extend_break();
+        assert_eq!(app.timer().duration().as_secs(), 15 * 60); // No change
+        assert!(!app.break_was_shortened());
+    }
+
+    #[test]
+    fn test_extend_break_only_works_in_break_mode() {
+        let mut app = App::new().unwrap();
+
+        // Start in Pomodoro mode
+        assert_eq!(app.mode(), AppMode::Pomodoro);
+        let original_duration = app.timer().duration();
+
+        // Extend should do nothing in Pomodoro mode
+        app.extend_break();
+        assert_eq!(app.mode(), AppMode::Pomodoro);
+        assert_eq!(app.timer().duration(), original_duration);
+        assert!(!app.break_was_shortened());
+    }
+
+    #[test]
+    fn test_extend_break_only_works_for_long_breaks() {
+        let mut app = App::new().unwrap();
+
+        // Start a short break (first session)
+        app.skip_to_break();
+        assert_eq!(app.timer().duration().as_secs(), 5 * 60); // 5 min short break
+
+        // Manually set shortened flag (simulate a broken state)
+        app.break_was_shortened = true;
+
+        // Try to extend - should have no effect since it's not after 4th session
+        app.extend_break();
+        assert_eq!(app.timer().duration().as_secs(), 5 * 60); // No change
+        assert!(app.break_was_shortened()); // Flag should remain
+    }
+
+    #[test]
+    fn test_key_handler_extend_break() {
+        let mut app = App::new().unwrap();
+
+        // Start a long break and shorten it
+        app.session_count = 4;
+        app.start_break();
+        app.shorten_break();
+        assert_eq!(app.timer().duration().as_secs(), 5 * 60);
+        assert!(app.break_was_shortened());
+
+        // Press 'e' key to extend break
+        let key_event = KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE);
+        app.handle_key(key_event);
+
+        // Should extend back to 15 minutes
+        assert_eq!(app.timer().duration().as_secs(), 15 * 60);
+        assert!(!app.break_was_shortened());
+        assert_eq!(app.mode(), AppMode::Break);
+    }
+
+    #[test]
+    fn test_shortened_state_resets_on_new_cycles() {
+        let mut app = App::new().unwrap();
+
+        // Start a long break and shorten it
+        app.session_count = 4;
+        app.start_break();
+        app.shorten_break();
+        assert!(app.break_was_shortened());
+
+        // Skip break to start new pomodoro
+        app.skip_break();
+        assert!(!app.break_was_shortened()); // Should reset when starting new pomodoro
+
+        // Start new break
+        app.skip_to_break();
+        assert!(!app.break_was_shortened()); // Should remain reset for new break
+    }
+
+    #[test]
+    fn test_complete_shorten_extend_workflow() {
+        let mut app = App::new().unwrap();
+
+        // Build up to 4th session for long break
+        for i in 1..=3 {
+            app.skip_to_break();
+            assert_eq!(app.session_count(), i);
+            assert!(!app.break_was_shortened()); // Should be false for short breaks
+            app.skip_break();
+        }
+
+        // 4th session: Long break (15 min)
+        app.skip_to_break();
+        assert_eq!(app.session_count(), 4);
+        assert_eq!(app.timer().duration().as_secs(), 15 * 60);
+        assert!(!app.break_was_shortened()); // Initially not shortened
+
+        // Shorten to 5 minutes
+        app.shorten_break();
+        assert_eq!(app.timer().duration().as_secs(), 5 * 60);
+        assert!(app.break_was_shortened()); // Now marked as shortened
+
+        // Extend back to 15 minutes
+        app.extend_break();
+        assert_eq!(app.timer().duration().as_secs(), 15 * 60);
+        assert!(!app.break_was_shortened()); // No longer marked as shortened
+
+        // Shorten again
+        app.shorten_break();
+        assert_eq!(app.timer().duration().as_secs(), 5 * 60);
+        assert!(app.break_was_shortened());
+
+        // Extend again
+        app.extend_break();
+        assert_eq!(app.timer().duration().as_secs(), 15 * 60);
+        assert!(!app.break_was_shortened());
+
+        // Complete the break
+        app.skip_break();
+        assert_eq!(app.mode(), AppMode::Pomodoro);
+        assert!(!app.break_was_shortened()); // Should reset when leaving break
+
+        // Next cycle should start fresh
+        app.skip_to_break();
+        assert_eq!(app.session_count(), 5);
+        assert_eq!(app.timer().duration().as_secs(), 5 * 60); // Back to short break
+        assert!(!app.break_was_shortened());
     }
 }

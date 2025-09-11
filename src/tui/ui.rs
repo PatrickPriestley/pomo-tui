@@ -319,20 +319,45 @@ fn get_responsive_controls(app: &App, width: u16) -> Vec<Line<'static>> {
 
 fn get_wide_controls(app: &App) -> Vec<Line<'static>> {
     if app.mode() == AppMode::Break {
+        let is_long_break =
+            (app.session_count() % 4) == 0 && app.timer().duration().as_secs() > 5 * 60;
+        let is_shortened_break = app.break_was_shortened();
+
+        let mut first_line = vec![
+            Span::raw("Space: "),
+            Span::styled("Start/Pause", Style::default().fg(Color::Green)),
+            Span::raw(" | "),
+            Span::raw("R: "),
+            Span::styled("Reset", Style::default().fg(Color::Yellow)),
+            Span::raw(" | "),
+            Span::raw("B: "),
+            Span::styled("Skip Break", Style::default().fg(Color::Cyan)),
+        ];
+
+        if is_long_break {
+            first_line.extend(vec![
+                Span::raw(" | "),
+                Span::raw("H: "),
+                Span::styled("Shorten", Style::default().fg(Color::Magenta)),
+            ]);
+        }
+
+        if is_shortened_break {
+            first_line.extend(vec![
+                Span::raw(" | "),
+                Span::raw("E: "),
+                Span::styled("Extend", Style::default().fg(Color::Blue)),
+            ]);
+        }
+
+        first_line.extend(vec![
+            Span::raw(" | "),
+            Span::raw("Q/Esc: "),
+            Span::styled("Quit", Style::default().fg(Color::Red)),
+        ]);
+
         vec![
-            Line::from(vec![
-                Span::raw("Space: "),
-                Span::styled("Start/Pause", Style::default().fg(Color::Green)),
-                Span::raw(" | "),
-                Span::raw("R: "),
-                Span::styled("Reset", Style::default().fg(Color::Yellow)),
-                Span::raw(" | "),
-                Span::raw("B: "),
-                Span::styled("Skip Break", Style::default().fg(Color::Cyan)),
-                Span::raw(" | "),
-                Span::raw("Q/Esc: "),
-                Span::styled("Quit", Style::default().fg(Color::Red)),
-            ]),
+            Line::from(first_line),
             Line::from(vec![
                 Span::raw("1: "),
                 Span::styled("Simple", Style::default().fg(Color::Cyan)),
@@ -363,20 +388,45 @@ fn get_wide_controls(app: &App) -> Vec<Line<'static>> {
 
 fn get_medium_controls(app: &App) -> Vec<Line<'static>> {
     if app.mode() == AppMode::Break {
+        let is_long_break =
+            (app.session_count() % 4) == 0 && app.timer().duration().as_secs() > 5 * 60;
+        let is_shortened_break = app.break_was_shortened();
+
+        let mut first_line = vec![
+            Span::raw("Space: "),
+            Span::styled("Start", Style::default().fg(Color::Green)),
+            Span::raw(" | "),
+            Span::raw("R: "),
+            Span::styled("Reset", Style::default().fg(Color::Yellow)),
+            Span::raw(" | "),
+            Span::raw("B: "),
+            Span::styled("Skip", Style::default().fg(Color::Cyan)),
+        ];
+
+        if is_long_break {
+            first_line.extend(vec![
+                Span::raw(" | "),
+                Span::raw("H: "),
+                Span::styled("Shorten", Style::default().fg(Color::Magenta)),
+            ]);
+        }
+
+        if is_shortened_break {
+            first_line.extend(vec![
+                Span::raw(" | "),
+                Span::raw("E: "),
+                Span::styled("Extend", Style::default().fg(Color::Blue)),
+            ]);
+        }
+
+        first_line.extend(vec![
+            Span::raw(" | "),
+            Span::raw("Q: "),
+            Span::styled("Quit", Style::default().fg(Color::Red)),
+        ]);
+
         vec![
-            Line::from(vec![
-                Span::raw("Space: "),
-                Span::styled("Start", Style::default().fg(Color::Green)),
-                Span::raw(" | "),
-                Span::raw("R: "),
-                Span::styled("Reset", Style::default().fg(Color::Yellow)),
-                Span::raw(" | "),
-                Span::raw("B: "),
-                Span::styled("Skip", Style::default().fg(Color::Cyan)),
-                Span::raw(" | "),
-                Span::raw("Q: "),
-                Span::styled("Quit", Style::default().fg(Color::Red)),
-            ]),
+            Line::from(first_line),
             Line::from(vec![
                 Span::raw("1: "),
                 Span::styled("Simple", Style::default().fg(Color::Cyan)),
@@ -410,6 +460,37 @@ fn get_medium_controls(app: &App) -> Vec<Line<'static>> {
 
 fn get_narrow_controls(app: &App) -> Vec<Line<'static>> {
     if app.mode() == AppMode::Break {
+        let is_long_break =
+            (app.session_count() % 4) == 0 && app.timer().duration().as_secs() > 5 * 60;
+        let is_shortened_break = app.break_was_shortened();
+
+        let mut second_line = vec![
+            Span::raw("B: "),
+            Span::styled("Skip", Style::default().fg(Color::Cyan)),
+        ];
+
+        if is_long_break {
+            second_line.extend(vec![
+                Span::raw(" | "),
+                Span::raw("H: "),
+                Span::styled("Shorten", Style::default().fg(Color::Magenta)),
+            ]);
+        }
+
+        if is_shortened_break {
+            second_line.extend(vec![
+                Span::raw(" | "),
+                Span::raw("E: "),
+                Span::styled("Extend", Style::default().fg(Color::Blue)),
+            ]);
+        }
+
+        second_line.extend(vec![
+            Span::raw(" | "),
+            Span::raw("Q: "),
+            Span::styled("Quit", Style::default().fg(Color::Red)),
+        ]);
+
         vec![
             Line::from(vec![
                 Span::raw("␣: "),
@@ -418,13 +499,7 @@ fn get_narrow_controls(app: &App) -> Vec<Line<'static>> {
                 Span::raw("R: "),
                 Span::styled("Reset", Style::default().fg(Color::Yellow)),
             ]),
-            Line::from(vec![
-                Span::raw("B: "),
-                Span::styled("Skip", Style::default().fg(Color::Cyan)),
-                Span::raw(" | "),
-                Span::raw("Q: "),
-                Span::styled("Quit", Style::default().fg(Color::Red)),
-            ]),
+            Line::from(second_line),
             Line::from(vec![
                 Span::raw("1: "),
                 Span::styled("Simple", Style::default().fg(Color::Cyan)),
