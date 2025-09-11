@@ -26,6 +26,7 @@ ratatui = "0.26"
 crossterm = "0.27"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"] }
 chrono = "0.4"
+thiserror = "1.0"
 
 [dev-dependencies]
 tempfile = "3"

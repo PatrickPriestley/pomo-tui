@@ -1,3 +1,4 @@
+use crate::integrations::DndState;
 use crate::tui::app::{App, AppMode};
 use ratatui::{
     prelude::*,
@@ -5,26 +6,72 @@ use ratatui::{
 };
 
 pub fn draw(frame: &mut Frame, app: &App) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(10),
-            Constraint::Length(5),
-        ])
-        .split(frame.size());
+    // Check if we have a status message to display
+    let has_status = app.status_message().is_some();
+    
+    let chunks = if has_status {
+        // Check if we have setup instructions that need more space
+        let status_height = if let Some(msg) = app.status_message() {
+            if msg.contains("📋 Focus Mode Setup Instructions") {
+                12 // More space for setup instructions
+            } else {
+                4  // Normal space for other status messages
+            }
+        } else {
+            4
+        };
+        
+        Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(8),
+                Constraint::Length(5),
+                Constraint::Length(status_height), // Dynamic status message area
+            ])
+            .split(frame.size())
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(10),
+                Constraint::Length(5),
+            ])
+            .split(frame.size())
+    };
 
-    // Title
+    // Title with Focus mode status
+    let focus_indicator = if app.is_dnd_supported() {
+        match app.dnd_state() {
+            DndState::Enabled => " 🔕",
+            DndState::Disabled => " 🔔",
+            DndState::Unknown => " ❓",
+        }
+    } else {
+        ""
+    };
+
     let title = match app.mode() {
-        AppMode::Pomodoro => format!("🍅 Pomodoro Timer - Session #{}", app.session_count() + 1),
+        AppMode::Pomodoro => format!(
+            "🍅 Pomodoro Timer - Session #{}{}",
+            app.session_count() + 1,
+            focus_indicator
+        ),
         AppMode::Break => {
             let break_type = if (app.session_count() % 4) == 0 {
                 "Long Break"
             } else {
                 "Short Break"
             };
-            format!("☕ {} - After Session #{}", break_type, app.session_count())
+            format!(
+                "☕ {} - After Session #{}{}",
+                break_type,
+                app.session_count(),
+                focus_indicator
+            )
         }
     };
 
@@ -64,6 +111,60 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     // Controls
     render_controls(frame, app, chunks[2]);
+    
+    // Status message (if any)
+    if has_status {
+        if let Some(msg) = app.status_message() {
+            let status_style = if msg.contains("❌") || msg.contains("⚠️") {
+                Style::default().fg(Color::Red).bold()
+            } else if msg.contains("✅") {
+                Style::default().fg(Color::Green).bold()
+            } else if msg.contains("❓") {
+                Style::default().fg(Color::Cyan).bold()
+            } else {
+                Style::default().fg(Color::Yellow).bold()
+            };
+            
+            // Split message into lines and limit length for better formatting
+            let lines: Vec<&str> = msg.lines().collect();
+            let is_setup_instructions = msg.contains("📋 Focus Mode Setup Instructions");
+            let max_lines = if is_setup_instructions { 10 } else { 3 };
+            
+            let display_text = if lines.len() > max_lines {
+                // If too many lines, show first few and indicate more
+                let mut displayed_lines = Vec::new();
+                for i in 0..max_lines {
+                    if let Some(line) = lines.get(i) {
+                        displayed_lines.push(*line);
+                    }
+                }
+                format!("{}\n... (Press 'ESC' to dismiss)", displayed_lines.join("\n"))
+            } else {
+                format!("{}\n(Press 'ESC' to dismiss)", msg)
+            };
+            
+            // Determine wrapping behavior based on content type
+            let wrap_config = if msg.contains("📋 Focus Mode Setup Instructions") {
+                // Don't trim whitespace for setup instructions to preserve indentation
+                ratatui::widgets::Wrap { trim: false }
+            } else {
+                // Use normal trimming for other messages
+                ratatui::widgets::Wrap { trim: true }
+            };
+            
+            let status_widget = Paragraph::new(display_text)
+                .style(status_style)
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(ratatui::widgets::BorderType::Rounded)
+                    .title(" Status - Press ESC to dismiss ")
+                    .title_alignment(Alignment::Center))
+                .alignment(Alignment::Left) // Left align for better readability
+                .wrap(wrap_config);
+                
+            frame.render_widget(status_widget, chunks[3]);
+        }
+    }
 }
 
 fn render_timer(frame: &mut Frame, app: &App, area: Rect) {
@@ -356,21 +457,49 @@ fn get_wide_controls(app: &App) -> Vec<Line<'static>> {
             Span::styled("Quit", Style::default().fg(Color::Red)),
         ]);
 
-        vec![
-            Line::from(first_line),
-            Line::from(vec![
-                Span::raw("1: "),
-                Span::styled("Simple", Style::default().fg(Color::Cyan)),
+        let mut second_line = vec![
+            Span::raw("1: "),
+            Span::styled("Simple", Style::default().fg(Color::Cyan)),
+            Span::raw(" | "),
+            Span::raw("2: "),
+            Span::styled("Box", Style::default().fg(Color::Cyan)),
+            Span::raw(" | "),
+            Span::raw("3: "),
+            Span::styled("4-7-8", Style::default().fg(Color::Cyan)),
+            Span::raw(" | "),
+            Span::raw("C: "),
+            Span::styled("Clear", Style::default().fg(Color::Gray)),
+            Span::raw(" | "),
+            Span::raw("F: "),
+            Span::styled("Focus Help", Style::default().fg(Color::Cyan)),
+        ];
+
+        // Add Focus controls if supported
+        if app.is_dnd_supported() {
+            second_line.extend(vec![
                 Span::raw(" | "),
-                Span::raw("2: "),
-                Span::styled("Box", Style::default().fg(Color::Cyan)),
+                Span::raw("D: "),
+                Span::styled("Toggle Focus", Style::default().fg(Color::LightBlue)),
                 Span::raw(" | "),
-                Span::raw("3: "),
-                Span::styled("4-7-8", Style::default().fg(Color::Cyan)),
-            ]),
-        ]
+                Span::raw("A: "),
+                Span::styled(
+                    if app.dnd_auto_enabled() {
+                        "Auto ON"
+                    } else {
+                        "Auto OFF"
+                    },
+                    Style::default().fg(if app.dnd_auto_enabled() {
+                        Color::Green
+                    } else {
+                        Color::Gray
+                    }),
+                ),
+            ]);
+        }
+
+        vec![Line::from(first_line), Line::from(second_line)]
     } else {
-        vec![Line::from(vec![
+        let mut first_line = vec![
             Span::raw("Space: "),
             Span::styled("Start/Pause", Style::default().fg(Color::Green)),
             Span::raw(" | "),
@@ -379,10 +508,38 @@ fn get_wide_controls(app: &App) -> Vec<Line<'static>> {
             Span::raw(" | "),
             Span::raw("S: "),
             Span::styled("Skip to Break", Style::default().fg(Color::Cyan)),
+        ];
+
+        // Add Focus controls if supported
+        if app.is_dnd_supported() {
+            first_line.extend(vec![
+                Span::raw(" | "),
+                Span::raw("D: "),
+                Span::styled("Toggle Focus", Style::default().fg(Color::LightBlue)),
+                Span::raw(" | "),
+                Span::raw("A: "),
+                Span::styled(
+                    if app.dnd_auto_enabled() {
+                        "Auto ON"
+                    } else {
+                        "Auto OFF"
+                    },
+                    Style::default().fg(if app.dnd_auto_enabled() {
+                        Color::Green
+                    } else {
+                        Color::Gray
+                    }),
+                ),
+            ]);
+        }
+
+        first_line.extend(vec![
             Span::raw(" | "),
             Span::raw("Q/Esc: "),
             Span::styled("Quit", Style::default().fg(Color::Red)),
-        ])]
+        ]);
+
+        vec![Line::from(first_line)]
     }
 }
 
@@ -425,36 +582,54 @@ fn get_medium_controls(app: &App) -> Vec<Line<'static>> {
             Span::styled("Quit", Style::default().fg(Color::Red)),
         ]);
 
-        vec![
-            Line::from(first_line),
-            Line::from(vec![
-                Span::raw("1: "),
-                Span::styled("Simple", Style::default().fg(Color::Cyan)),
+        let mut second_line = vec![
+            Span::raw("1: "),
+            Span::styled("Simple", Style::default().fg(Color::Cyan)),
+            Span::raw(" | "),
+            Span::raw("2: "),
+            Span::styled("Box", Style::default().fg(Color::Cyan)),
+            Span::raw(" | "),
+            Span::raw("3: "),
+            Span::styled("4-7-8", Style::default().fg(Color::Cyan)),
+        ];
+
+        // Add Focus control for medium displays (condensed)
+        if app.is_dnd_supported() {
+            second_line.extend(vec![
                 Span::raw(" | "),
-                Span::raw("2: "),
-                Span::styled("Box", Style::default().fg(Color::Cyan)),
-                Span::raw(" | "),
-                Span::raw("3: "),
-                Span::styled("4-7-8", Style::default().fg(Color::Cyan)),
-            ]),
-        ]
+                Span::raw("D: "),
+                Span::styled("Focus", Style::default().fg(Color::LightBlue)),
+            ]);
+        }
+
+        vec![Line::from(first_line), Line::from(second_line)]
     } else {
-        vec![
-            Line::from(vec![
-                Span::raw("Space: "),
-                Span::styled("Start", Style::default().fg(Color::Green)),
+        let first_line = vec![
+            Span::raw("Space: "),
+            Span::styled("Start", Style::default().fg(Color::Green)),
+            Span::raw(" | "),
+            Span::raw("R: "),
+            Span::styled("Reset", Style::default().fg(Color::Yellow)),
+            Span::raw(" | "),
+            Span::raw("S: "),
+            Span::styled("Skip", Style::default().fg(Color::Cyan)),
+        ];
+
+        let mut second_line = vec![
+            Span::raw("Q/Esc: "),
+            Span::styled("Quit", Style::default().fg(Color::Red)),
+        ];
+
+        // Add Focus control to second line for Pomodoro mode
+        if app.is_dnd_supported() {
+            second_line.extend(vec![
                 Span::raw(" | "),
-                Span::raw("R: "),
-                Span::styled("Reset", Style::default().fg(Color::Yellow)),
-                Span::raw(" | "),
-                Span::raw("S: "),
-                Span::styled("Skip", Style::default().fg(Color::Cyan)),
-            ]),
-            Line::from(vec![
-                Span::raw("Q/Esc: "),
-                Span::styled("Quit", Style::default().fg(Color::Red)),
-            ]),
-        ]
+                Span::raw("D: "),
+                Span::styled("Focus", Style::default().fg(Color::LightBlue)),
+            ]);
+        }
+
+        vec![Line::from(first_line), Line::from(second_line)]
     }
 }
 
@@ -482,6 +657,15 @@ fn get_narrow_controls(app: &App) -> Vec<Line<'static>> {
                 Span::raw(" | "),
                 Span::raw("E: "),
                 Span::styled("Extend", Style::default().fg(Color::Blue)),
+            ]);
+        }
+
+        // Add Focus to second line if there's space
+        if app.is_dnd_supported() {
+            second_line.extend(vec![
+                Span::raw(" | "),
+                Span::raw("D: "),
+                Span::styled("Focus", Style::default().fg(Color::LightBlue)),
             ]);
         }
 
