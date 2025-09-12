@@ -176,7 +176,9 @@ impl MacOSDndController {
         }
 
         // If preferred method is KeyboardShortcut, validate accessibility permissions
-        if matches!(self.preferred_method, DndMethod::KeyboardShortcut) && !self.check_accessibility_permissions() {
+        if matches!(self.preferred_method, DndMethod::KeyboardShortcut)
+            && !self.check_accessibility_permissions()
+        {
             return Err(DndError::PermissionsRequired);
         }
 
