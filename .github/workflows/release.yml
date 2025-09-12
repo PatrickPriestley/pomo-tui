@@ -137,7 +137,7 @@ jobs:
   publish-crates:
     name: Publish to crates.io
     runs-on: ubuntu-latest
-    if: ${{ !contains(github.ref, '-') && secrets.CRATES_IO_TOKEN != '' }} # Only publish stable releases with token
+    if: ${{ !contains(github.ref, '-') }} # Only publish stable releases (skip if no token)
     
     steps:
       - name: Checkout
@@ -152,7 +152,12 @@ jobs:
           echo "No additional dependencies required"
 
       - name: Login to crates.io
-        run: cargo login ${{ secrets.CRATES_IO_TOKEN }}
+        run: |
+          if [ -z "${{ secrets.CRATES_IO_TOKEN }}" ]; then
+            echo "CRATES_IO_TOKEN not configured, skipping crates.io publish"
+            exit 0
+          fi
+          cargo login ${{ secrets.CRATES_IO_TOKEN }}
 
       - name: Publish to crates.io
         run: cargo publish --verbose
