@@ -49,18 +49,18 @@ impl Default for MacOSDndController {
 impl MacOSDndController {
     pub fn new() -> Self {
         // Check for environment variable overrides
-        let enable_shortcut = std::env::var("FOCUS_ENABLE_SHORTCUT")
-            .unwrap_or_else(|_| "Set Focus".to_string());
+        let enable_shortcut =
+            std::env::var("FOCUS_ENABLE_SHORTCUT").unwrap_or_else(|_| "Set Focus".to_string());
         let disable_shortcut = std::env::var("FOCUS_DISABLE_SHORTCUT")
             .unwrap_or_else(|_| "Turn Off Focus".to_string());
-            
+
         Self::with_shortcuts(&enable_shortcut, &disable_shortcut)
     }
-    
+
     pub fn with_shortcuts(enable_shortcut: &str, disable_shortcut: &str) -> Self {
         // Detect best method based on macOS version and available tools
         let preferred_method = Self::detect_best_method();
-        
+
         Self {
             preferred_method,
             original_state: None,
@@ -70,7 +70,7 @@ impl MacOSDndController {
             shortcuts_available: None,
         }
     }
-    
+
     /// Detect the best available method for controlling Focus/DND
     fn detect_best_method() -> DndMethod {
         // Check if shortcuts command is available (macOS Monterey+)
@@ -86,7 +86,7 @@ impl MacOSDndController {
             DndMethod::Defaults
         }
     }
-    
+
     /// Check if running on macOS
     pub fn is_supported() -> bool {
         cfg!(target_os = "macos")
@@ -103,7 +103,7 @@ impl MacOSDndController {
             self.shortcuts_available = Some(
                 self.check_shortcuts_exist()
                     .map(|(enable, disable)| enable && disable)
-                    .unwrap_or(false)
+                    .unwrap_or(false),
             );
         }
 
@@ -118,7 +118,7 @@ impl MacOSDndController {
             Ok(state) => {
                 self.last_known_state = Some(state);
                 Ok(state)
-            },
+            }
             Err(_) => {
                 // If all else fails, use last known or unknown
                 Ok(self.last_known_state.unwrap_or(DndState::Unknown))
@@ -146,14 +146,14 @@ impl MacOSDndController {
         // If preferred method is Shortcuts, validate they exist and update cache
         if matches!(self.preferred_method, DndMethod::Shortcuts) {
             // First refresh the cache to ensure we have current state
-            if let Err(_) = self.refresh_shortcuts_cache() {
+            if self.refresh_shortcuts_cache().is_err() {
                 // If cache refresh fails, shortcuts are likely not available
                 return Err(DndError::CommandFailed(format!(
                     "Focus mode shortcuts not available.\n\n{}",
                     self.get_setup_instructions()
                 )));
             }
-            
+
             // Check cache state
             if self.shortcuts_available == Some(false) {
                 return Err(DndError::CommandFailed(format!(
@@ -161,7 +161,7 @@ impl MacOSDndController {
                     self.get_setup_instructions()
                 )));
             }
-            
+
             // Double-check by querying shortcuts directly
             if let Ok((enable_exists, disable_exists)) = self.check_shortcuts_exist() {
                 if !enable_exists || !disable_exists {
@@ -176,13 +176,11 @@ impl MacOSDndController {
         }
 
         // If preferred method is KeyboardShortcut, validate accessibility permissions
-        if matches!(self.preferred_method, DndMethod::KeyboardShortcut) {
-            if !self.check_accessibility_permissions() {
-                return Err(DndError::PermissionsRequired);
-            }
+        if matches!(self.preferred_method, DndMethod::KeyboardShortcut) && !self.check_accessibility_permissions() {
+            return Err(DndError::PermissionsRequired);
         }
 
-        // Try preferred method first  
+        // Try preferred method first
         let preferred_method = self.preferred_method.clone();
         let preferred_result = self.try_set_state_with_method(&preferred_method, state);
         if preferred_result.is_ok() {
@@ -302,7 +300,8 @@ impl MacOSDndController {
             // Even if the command succeeds, warn that this doesn't control modern Focus mode
             Err(DndError::CommandFailed(
                 "Legacy DND preference changed but Focus mode requires shortcuts.\n\
-                Please configure Focus mode shortcuts for proper functionality.".to_string()
+                Please configure Focus mode shortcuts for proper functionality."
+                    .to_string(),
             ))
         } else {
             // Sanitize stderr to prevent terminal escape sequences from interfering with TUI
@@ -380,7 +379,7 @@ impl MacOSDndController {
                 // Shortcuts were removed - clear the cache
                 self.shortcuts_available = Some(false);
                 Err(DndError::CommandFailed(format!(
-                    "Shortcut '{}' not found. Please create it in the Shortcuts app first.", 
+                    "Shortcut '{}' not found. Please create it in the Shortcuts app first.",
                     shortcut_name
                 )))
             } else {
@@ -410,27 +409,29 @@ impl MacOSDndController {
             false
         }
     }
-    
+
     /// Check if the configured shortcuts exist
     pub fn check_shortcuts_exist(&self) -> Result<(bool, bool), DndError> {
-        let output = Command::new("/usr/bin/shortcuts")
-            .args(["list"])
-            .output()?;
-            
+        let output = Command::new("/usr/bin/shortcuts").args(["list"]).output()?;
+
         if !output.status.success() {
             return Err(DndError::CommandFailed(
-                "Failed to list shortcuts".to_string()
+                "Failed to list shortcuts".to_string(),
             ));
         }
-        
+
         let shortcuts_list = String::from_utf8_lossy(&output.stdout);
         let lines: Vec<&str> = shortcuts_list.lines().collect();
-        let enable_exists = lines.iter().any(|line| line.trim() == self.enable_shortcut_name);
-        let disable_exists = lines.iter().any(|line| line.trim() == self.disable_shortcut_name);
-        
+        let enable_exists = lines
+            .iter()
+            .any(|line| line.trim() == self.enable_shortcut_name);
+        let disable_exists = lines
+            .iter()
+            .any(|line| line.trim() == self.disable_shortcut_name);
+
         Ok((enable_exists, disable_exists))
     }
-    
+
     /// Force refresh the shortcuts availability cache
     pub fn refresh_shortcuts_cache(&mut self) -> Result<(), DndError> {
         match self.check_shortcuts_exist() {
@@ -445,7 +446,7 @@ impl MacOSDndController {
             }
         }
     }
-    
+
     /// Get setup instructions for creating required shortcuts
     pub fn get_setup_instructions(&self) -> String {
         format!(
@@ -469,8 +470,7 @@ the exact actions "Set Focus" and "Turn Off Focus".
 Alternative: Customize names with environment variables:
   FOCUS_ENABLE_SHORTCUT="Your Enable Name"
   FOCUS_DISABLE_SHORTCUT="Your Disable Name""#,
-            self.enable_shortcut_name,
-            self.disable_shortcut_name
+            self.enable_shortcut_name, self.disable_shortcut_name
         )
     }
 }
@@ -484,7 +484,10 @@ mod tests {
         let controller = MacOSDndController::new();
         assert_eq!(controller.original_state, None);
         // On modern macOS, preferred method should be Shortcuts if available
-        assert!(matches!(controller.preferred_method, DndMethod::Shortcuts | DndMethod::Defaults));
+        assert!(matches!(
+            controller.preferred_method,
+            DndMethod::Shortcuts | DndMethod::Defaults
+        ));
     }
 
     #[test]

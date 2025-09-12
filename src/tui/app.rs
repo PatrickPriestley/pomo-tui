@@ -38,16 +38,17 @@ impl App {
 
         let mut dnd_state = DndState::Unknown;
         let mut status_message = None;
-        
+
         if let Some(ref mut controller) = dnd_controller {
             // Get initial state
             dnd_state = controller.get_state().unwrap_or(DndState::Unknown);
-            
+
             // Check if Focus mode is properly configured
             if let Ok((enable_exists, disable_exists)) = controller.check_shortcuts_exist() {
                 if !enable_exists || !disable_exists {
                     // Focus mode not configured - show warning in status only
-                    status_message = Some("⚠️ Focus mode not configured - press 'F' for help".to_string());
+                    status_message =
+                        Some("⚠️ Focus mode not configured - press 'F' for help".to_string());
                 }
             }
         }
@@ -130,7 +131,8 @@ impl App {
             KeyCode::Char('d') => {
                 match self.toggle_dnd() {
                     Ok(_) => {
-                        self.status_message = Some("✅ Focus mode toggled successfully".to_string());
+                        self.status_message =
+                            Some("✅ Focus mode toggled successfully".to_string());
                     }
                     Err(err) => {
                         // Show clean error message without stderr output to avoid overlapping text
@@ -151,18 +153,25 @@ impl App {
                     match controller.check_shortcuts_exist() {
                         Ok((enable_exists, disable_exists)) => {
                             if enable_exists && disable_exists {
-                                self.status_message = Some("✅ Focus mode shortcuts configured correctly!".to_string());
+                                self.status_message = Some(
+                                    "✅ Focus mode shortcuts configured correctly!".to_string(),
+                                );
                             } else {
                                 // Show full setup instructions in status message
-                                self.status_message = Some(format!("📋 Focus Mode Setup Instructions:\n\n{}", controller.get_setup_instructions()));
+                                self.status_message = Some(format!(
+                                    "📋 Focus Mode Setup Instructions:\n\n{}",
+                                    controller.get_setup_instructions()
+                                ));
                             }
                         }
                         Err(_) => {
-                            self.status_message = Some("❌ Unable to check Focus mode shortcuts".to_string());
+                            self.status_message =
+                                Some("❌ Unable to check Focus mode shortcuts".to_string());
                         }
                     }
                 } else {
-                    self.status_message = Some("❌ Focus mode not supported on this platform".to_string());
+                    self.status_message =
+                        Some("❌ Focus mode not supported on this platform".to_string());
                 }
             }
             KeyCode::Char('1') => self.set_breathing_pattern(BreathingPattern::Simple),
@@ -338,11 +347,11 @@ impl App {
     pub fn dnd_auto_enabled(&self) -> bool {
         self.dnd_auto_enabled
     }
-    
+
     pub fn status_message(&self) -> Option<&str> {
         self.status_message.as_deref()
     }
-    
+
     pub fn clear_status_message(&mut self) {
         self.status_message = None;
     }
@@ -369,25 +378,31 @@ impl App {
                 }
                 Err(e) => {
                     let error_msg = e.to_string();
-                    
+
                     // Refresh shortcuts cache to detect if they were removed
-                    if let Err(_) = controller.refresh_shortcuts_cache() {
+                    if controller.refresh_shortcuts_cache().is_err() {
                         // If refresh fails, shortcuts were likely removed
                     }
-                    
+
                     if error_msg.contains("not configured") || error_msg.contains("not found") {
                         // Clear any previous status and show clean error
-                        Err("Focus mode shortcuts not configured - press 'F' for setup help".to_string())
+                        Err(
+                            "Focus mode shortcuts not configured - press 'F' for setup help"
+                                .to_string(),
+                        )
                     } else {
-                        Err(format!("Focus mode error: {}", error_msg.lines().next().unwrap_or(&error_msg)))
+                        Err(format!(
+                            "Focus mode error: {}",
+                            error_msg.lines().next().unwrap_or(&error_msg)
+                        ))
                     }
-                },
+                }
             }
         } else {
             Err("Focus mode not supported on this platform".to_string())
         }
     }
-    
+
     /// Check if Focus mode shortcuts are properly configured
     pub fn check_focus_setup(&mut self) -> Result<String, String> {
         if let Some(ref mut controller) = self.dnd_controller {
@@ -404,7 +419,7 @@ impl App {
                             "disable shortcut"
                         };
                         Err(format!(
-                            "Missing {} for Focus mode.\n\n{}", 
+                            "Missing {} for Focus mode.\n\n{}",
                             missing,
                             controller.get_setup_instructions()
                         ))

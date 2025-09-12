@@ -8,19 +8,19 @@ use ratatui::{
 pub fn draw(frame: &mut Frame, app: &App) {
     // Check if we have a status message to display
     let has_status = app.status_message().is_some();
-    
+
     let chunks = if has_status {
         // Check if we have setup instructions that need more space
         let status_height = if let Some(msg) = app.status_message() {
             if msg.contains("📋 Focus Mode Setup Instructions") {
                 12 // More space for setup instructions
             } else {
-                4  // Normal space for other status messages
+                4 // Normal space for other status messages
             }
         } else {
             4
         };
-        
+
         Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
@@ -111,7 +111,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     // Controls
     render_controls(frame, app, chunks[2]);
-    
+
     // Status message (if any)
     if has_status {
         if let Some(msg) = app.status_message() {
@@ -124,12 +124,12 @@ pub fn draw(frame: &mut Frame, app: &App) {
             } else {
                 Style::default().fg(Color::Yellow).bold()
             };
-            
+
             // Split message into lines and limit length for better formatting
             let lines: Vec<&str> = msg.lines().collect();
             let is_setup_instructions = msg.contains("📋 Focus Mode Setup Instructions");
             let max_lines = if is_setup_instructions { 10 } else { 3 };
-            
+
             let display_text = if lines.len() > max_lines {
                 // If too many lines, show first few and indicate more
                 let mut displayed_lines = Vec::new();
@@ -138,11 +138,14 @@ pub fn draw(frame: &mut Frame, app: &App) {
                         displayed_lines.push(*line);
                     }
                 }
-                format!("{}\n... (Press 'ESC' to dismiss)", displayed_lines.join("\n"))
+                format!(
+                    "{}\n... (Press 'ESC' to dismiss)",
+                    displayed_lines.join("\n")
+                )
             } else {
                 format!("{}\n(Press 'ESC' to dismiss)", msg)
             };
-            
+
             // Determine wrapping behavior based on content type
             let wrap_config = if msg.contains("📋 Focus Mode Setup Instructions") {
                 // Don't trim whitespace for setup instructions to preserve indentation
@@ -151,17 +154,19 @@ pub fn draw(frame: &mut Frame, app: &App) {
                 // Use normal trimming for other messages
                 ratatui::widgets::Wrap { trim: true }
             };
-            
+
             let status_widget = Paragraph::new(display_text)
                 .style(status_style)
-                .block(Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(ratatui::widgets::BorderType::Rounded)
-                    .title(" Status - Press ESC to dismiss ")
-                    .title_alignment(Alignment::Center))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_type(ratatui::widgets::BorderType::Rounded)
+                        .title(" Status - Press ESC to dismiss ")
+                        .title_alignment(Alignment::Center),
+                )
                 .alignment(Alignment::Left) // Left align for better readability
                 .wrap(wrap_config);
-                
+
             frame.render_widget(status_widget, chunks[3]);
         }
     }
