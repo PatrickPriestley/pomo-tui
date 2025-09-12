@@ -1,0 +1,211 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Create release
+        run: |
+          # Check if release already exists, delete it if so
+          if gh release view ${{ github.ref_name }} >/dev/null 2>&1; then
+            echo "Release ${{ github.ref_name }} already exists, deleting it first..."
+            gh release delete ${{ github.ref_name }} --yes
+          fi
+          
+          gh release create ${{ github.ref_name }} \
+            --title "Release ${{ github.ref_name }}" \
+            --notes "Release notes for pomo-tui ${{ github.ref_name }}
+
+            ## Features
+            - ADHD-focused Pomodoro timer with Focus mode integration
+            - Break management with shorten/extend options  
+            - Breathing exercises during breaks
+            - Terminal user interface
+            - Cross-platform support
+
+            ## Installation
+
+            ### Homebrew (macOS/Linux)
+            \`\`\`bash
+            brew tap PatrickPriestley/tap
+            brew install pomo-tui
+            \`\`\`
+
+            ### Binary Download
+            Download the appropriate binary for your platform from the assets below.
+
+            ## Changes
+            See commit history for detailed changes."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-and-upload:
+    name: Build and Upload
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            name: pomo-tui-linux-x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            name: pomo-tui-linux-x86_64-musl
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: pomo-tui-windows-x86_64.exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            name: pomo-tui-macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: pomo-tui-macos-aarch64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install system dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev
+          if [[ "${{ matrix.target }}" == *"musl"* ]]; then
+            sudo apt-get install -y musl-tools
+          fi
+
+      - name: Install system dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          # Audio dependencies included in macOS
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build release binary
+        run: |
+          cargo build --release --target ${{ matrix.target }} --verbose
+
+      - name: Strip binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          strip target/${{ matrix.target }}/release/pomo-tui
+
+      - name: Create archive
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            cp target/${{ matrix.target }}/release/pomo-tui.exe dist/
+            cd dist
+            7z a ../${{ matrix.name }}.zip pomo-tui.exe
+          else
+            cp target/${{ matrix.target }}/release/pomo-tui dist/
+            cd dist
+            tar -czf ../${{ matrix.name }}.tar.gz pomo-tui
+          fi
+
+      - name: Upload Release Asset (Windows)
+        if: matrix.os == 'windows-latest'
+        run: gh release upload ${{ github.ref_name }} ./${{ matrix.name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Release Asset (Unix)
+        if: matrix.os != 'windows-latest'
+        run: gh release upload ${{ github.ref_name }} ./${{ matrix.name }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-crates:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.ref, '-') }} # Only publish stable releases (skip if no token)
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          # No special dependencies needed for basic TUI
+          echo "No additional dependencies required"
+
+      - name: Login to crates.io
+        run: |
+          if [ -z "${{ secrets.CRATES_IO_TOKEN }}" ]; then
+            echo "CRATES_IO_TOKEN not configured, skipping crates.io publish"
+            exit 0
+          fi
+          cargo login ${{ secrets.CRATES_IO_TOKEN }}
+
+      - name: Publish to crates.io
+        run: cargo publish --verbose
+
+  update-homebrew:
+    name: Update Homebrew Formula
+    needs: [build-and-upload]
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.ref, '-') }} # Only update for stable releases
+    
+    steps:
+      - name: Checkout homebrew-tap repo
+        uses: actions/checkout@v4
+        with:
+          repository: PatrickPriestley/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Download release tarball and get SHA256
+        run: |
+          version="${GITHUB_REF#refs/tags/v}"
+          wget "https://github.com/PatrickPriestley/pomo-tui/archive/v${version}.tar.gz" -O "pomo-tui-${version}.tar.gz"
+          sha256=$(shasum -a 256 "pomo-tui-${version}.tar.gz" | cut -d' ' -f1)
+          echo "RELEASE_SHA256=${sha256}" >> $GITHUB_ENV
+          echo "VERSION=${version}" >> $GITHUB_ENV
+
+      - name: Update Homebrew formula
+        run: |
+          cd homebrew-tap
+          sed -i.bak "s/archive\/v[0-9.]*\.tar\.gz/archive\/v${VERSION}.tar.gz/" Formula/pomo-tui.rb
+          sed -i.bak "s/sha256 \"[^\"]*\"/sha256 \"${RELEASE_SHA256}\"/" Formula/pomo-tui.rb
+          rm Formula/pomo-tui.rb.bak
+
+      - name: Commit and push formula update
+        run: |
+          cd homebrew-tap
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add Formula/pomo-tui.rb
+          git commit -m "Update pomo-tui to v${VERSION}"
+          git push
+

@@ -1,0 +1,36 @@
+[package]
+name = "pomo-tui"
+version = "0.1.0"
+edition = "2021"
+description = "ADHD-focused Pomodoro terminal application with Focus mode integration and task management"
+authors = ["Patrick Priestley"]
+license = "MIT"
+repository = "https://github.com/PatrickPriestley/pomo-tui"
+homepage = "https://github.com/PatrickPriestley/pomo-tui"
+readme = "README.md"
+keywords = ["pomodoro", "productivity", "tui", "terminal", "adhd", "focus"]
+categories = ["command-line-utilities"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+debug = true
+opt-level = 0
+
+[dependencies]
+ratatui = "0.26"
+crossterm = "0.27"
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"] }
+chrono = "0.4"
+thiserror = "1.0"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "pomo-tui"
+path = "src/main.rs"
