@@ -33,7 +33,7 @@ jobs:
         components: rustfmt, clippy
     
     - name: Cache Cargo dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/bin/
@@ -79,7 +79,7 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
     
     - name: Cache Cargo dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/bin/
@@ -104,7 +104,7 @@ jobs:
         ls -la ./target/release/pomo-tui*
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: pomo-tui-${{ matrix.os }}
         path: |
@@ -153,7 +153,7 @@ jobs:
       run: cargo doc --all-features --no-deps --document-private-items
     
     - name: Upload documentation
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: documentation
         path: target/doc/

@@ -9,54 +9,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  create-release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      version: ${{ steps.get_version.outputs.version }}
-    steps:
-      - name: Get version from tag
-        id: get_version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          body: |
-            Release notes for pomo-tui ${{ steps.get_version.outputs.version }}
-            
-            ## Features
-            - ADHD-focused Pomodoro timer
-            - Task management with priorities
-            - Statistics and progress tracking
-            - Terminal user interface
-            - Cross-platform support
-            
-            ## Installation
-            
-            ### Homebrew (macOS/Linux)
-            ```bash
-            brew tap PatrickPriestley/tap
-            brew install pomo-tui
-            ```
-            
-            ### Binary Download
-            Download the appropriate binary for your platform from the assets below.
-            
-            ## Changes
-            See CHANGELOG.md for detailed changes.
-          draft: false
-          prerelease: false
-
   build-and-upload:
     name: Build and Upload
-    needs: create-release
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -101,7 +55,7 @@ jobs:
           # Audio dependencies included in macOS
 
       - name: Cache Cargo dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
@@ -134,31 +88,50 @@ jobs:
             tar -czf ../${{ matrix.name }}.tar.gz pomo-tui
           fi
 
-      - name: Upload Release Asset (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-release-asset@v1
+      - name: Create release (first matrix job only)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --title "Release ${{ github.ref_name }}" \
+            --notes "Release notes for pomo-tui ${{ github.ref_name }}
+
+            ## Features
+            - ADHD-focused Pomodoro timer with Focus mode integration
+            - Break management with shorten/extend options  
+            - Breathing exercises during breaks
+            - Terminal user interface
+            - Cross-platform support
+
+            ## Installation
+
+            ### Homebrew (macOS/Linux)
+            \`\`\`bash
+            brew tap PatrickPriestley/tap
+            brew install pomo-tui
+            \`\`\`
+
+            ### Binary Download
+            Download the appropriate binary for your platform from the assets below.
+
+            ## Changes
+            See commit history for detailed changes."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./${{ matrix.name }}.zip
-          asset_name: ${{ matrix.name }}.zip
-          asset_content_type: application/zip
+
+      - name: Upload Release Asset (Windows)
+        if: matrix.os == 'windows-latest'
+        run: gh release upload ${{ github.ref_name }} ./${{ matrix.name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Release Asset (Unix)
         if: matrix.os != 'windows-latest'
-        uses: actions/upload-release-asset@v1
+        run: gh release upload ${{ github.ref_name }} ./${{ matrix.name }}.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./${{ matrix.name }}.tar.gz
-          asset_name: ${{ matrix.name }}.tar.gz
-          asset_content_type: application/gzip
 
   publish-crates:
     name: Publish to crates.io
-    needs: create-release
     runs-on: ubuntu-latest
     if: ${{ !contains(github.ref, '-') }} # Only publish stable releases
     
@@ -182,7 +155,7 @@ jobs:
 
   update-homebrew:
     name: Update Homebrew Formula
-    needs: [create-release, build-and-upload]
+    needs: [build-and-upload]
     runs-on: ubuntu-latest
     if: ${{ !contains(github.ref, '-') }} # Only update for stable releases
     
@@ -196,7 +169,7 @@ jobs:
 
       - name: Download release tarball and get SHA256
         run: |
-          version="${{ needs.create-release.outputs.version }}"
+          version="${GITHUB_REF#refs/tags/v}"
           wget "https://github.com/PatrickPriestley/pomo-tui/archive/v${version}.tar.gz" -O "pomo-tui-${version}.tar.gz"
           sha256=$(shasum -a 256 "pomo-tui-${version}.tar.gz" | cut -d' ' -f1)
           echo "RELEASE_SHA256=${sha256}" >> $GITHUB_ENV
@@ -251,11 +224,6 @@ jobs:
           tar -czf pomo-tui-completions.tar.gz -C completions .
 
       - name: Upload completions
-        uses: actions/upload-release-asset@v1
+        run: gh release upload ${{ github.ref_name }} ./pomo-tui-completions.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./pomo-tui-completions.tar.gz
-          asset_name: pomo-tui-completions.tar.gz
-          asset_content_type: application/gzip
