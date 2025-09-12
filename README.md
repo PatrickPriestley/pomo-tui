@@ -1,89 +1,111 @@
-# pomo-tui (Minimal Version)
+# pomo-tui
 
 🍅 **ADHD-focused Pomodoro Terminal Application**
 
-This is a minimal working version of pomo-tui that compiles and runs successfully.
+A terminal-based Pomodoro timer designed specifically for people with ADHD, featuring macOS Focus mode integration, task management, and a clean terminal interface.
 
-## Quick Install & Run
+## Features
 
-### Option 1: Automatic Installation
+- **🎯 ADHD-Friendly Design**: Gentle transitions and recovery features
+- **🔕 Focus Mode Integration**: Automatic macOS Focus mode control during sessions
+- **📋 Task Management**: Built-in task tracking and prioritization
+- **📊 Statistics**: Track your productivity patterns and progress
+- **🎨 Clean TUI**: Beautiful terminal interface built with ratatui
+- **🏃‍♂️ Flexible Sessions**: Customizable work and break intervals
+- **🔄 Auto-Enable Focus**: Automatically manage distractions during work sessions
+
+## Installation
+
+### Homebrew (Recommended)
+
 ```bash
-./install.sh
+brew tap PatrickPriestley/tap
+brew install pomo-tui
 ```
 
-### Option 2: Manual Installation
+### From Source
+
 ```bash
-# Build
-cargo build --release
-
-# Run directly
-./target/release/pomo-tui --version
-./target/release/pomo-tui --help
-./target/release/pomo-tui
-
-# Install globally
-cp target/release/pomo-tui ~/.local/bin/
-export PATH="$HOME/.local/bin:$PATH"
+git clone https://github.com/PatrickPriestley/pomo-tui
+cd pomo-tui
+cargo install --path .
 ```
 
-## Usage
+### Binary Release
+
+Download the latest binary from the [releases page](https://github.com/PatrickPriestley/pomo-tui/releases).
+
+## Quick Start
 
 ```bash
-# Show version
-pomo-tui --version
+# Start the TUI application
+pomo-tui
 
 # Show help
 pomo-tui --help
-
-# Interactive mode (minimal timer simulation)
-pomo-tui
 ```
 
-## What This Version Includes
+### Basic Controls
 
-✅ **Working compilation** - No build errors  
-✅ **Basic CLI interface** - Version and help commands  
-✅ **Interactive prompt** - Simple timer simulation  
-✅ **Cross-platform** - Works on Linux, macOS, Windows  
+- **Space** - Start/Pause timer
+- **R** - Reset current session  
+- **S** - Skip to break
+- **D** - Manually toggle Focus mode
+- **A** - Toggle auto-enable Focus mode
+- **F** - Show Focus mode setup help
+- **Q** - Quit application
 
-## What The Full Version Will Include
+## Focus Mode Setup (macOS)
 
-🚧 **Complete TUI interface** with ratatui  
-🚧 **Task management** with database persistence  
-🚧 **Timer functionality** with precision tracking  
-🚧 **Statistics dashboard** with productivity insights  
-🚧 **Audio support** with ambient sounds  
-🚧 **Integrations** (GitHub, Slack, Git, website blocking)  
-🚧 **ADHD-focused features** (gentle transitions, recovery, etc.)  
+To enable automatic Focus mode control:
 
-## Current Status
+1. Open the Shortcuts app
+2. Create a shortcut named "Set Focus"
+   - Add action: "Set Focus"
+   - Choose your preferred Focus mode
+   - Set duration: "Until I turn it off"
+3. Create a shortcut named "Turn Off Focus"
+   - Add action: "Turn Off Focus"
 
-This minimal version demonstrates:
-- ✅ Successful Rust compilation
-- ✅ Basic argument parsing
-- ✅ Binary installation process
-- ✅ Cross-platform compatibility
+The app will automatically enable Focus mode during Pomodoro sessions and disable it during breaks.
 
-## Development Status
+## Configuration
 
-The full implementation includes:
-- **45 completed tasks** (T001-T045)
-- **24 test suites** with comprehensive coverage
-- **20 documentation files** 
-- **Complete feature set** as specified
+pomo-tui stores its configuration and data in:
+- **macOS**: `~/Library/Application Support/pomo-tui/`
+- **Linux**: `~/.config/pomo-tui/`
+- **Windows**: `%APPDATA%\\pomo-tui\\`
 
-To build the full version, additional dependencies and module implementations are needed.
+## ADHD-Focused Features
 
-## Next Steps
+- **Gentle Transitions**: Smooth session changes without jarring interruptions
+- **Pause-Friendly**: Focus mode automatically disables when you pause for interruptions
+- **Recovery Support**: Designed to help you get back on track after breaks
+- **Visual Indicators**: Clear status indicators for current session state
 
-1. **Add dependencies** - ratatui, sqlx, tokio, etc.
-2. **Implement core modules** - timer, task manager, database
-3. **Build TUI interface** - terminal user interface
-4. **Add integrations** - GitHub, Slack, audio, etc.
-5. **Enable all tests** - comprehensive test suite
+## Development
+
+```bash
+# Clone and build
+git clone https://github.com/PatrickPriestley/pomo-tui
+cd pomo-tui
+cargo build
+
+# Run tests
+cargo test
+
+# Install locally
+cargo install --path .
+```
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit issues and pull requests.
 
 ---
 
-🎯 **Goal**: Provide an ADHD-focused Pomodoro timer that actually helps with focus and productivity!
-
-**Repository**: This implementation demonstrates the full architecture and planning for a production-ready ADHD-focused productivity tool.
+**Built with Rust** 🦀 | **Powered by Ratatui** 📟 | **Designed for Focus** 🎯

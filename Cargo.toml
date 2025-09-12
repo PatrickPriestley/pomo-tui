@@ -2,13 +2,13 @@
 name = "pomo-tui"
 version = "0.1.0"
 edition = "2021"
-description = "Simple Pomodoro timer with breathing exercises in terminal"
-authors = ["Your Name <your.email@example.com>"]
+description = "ADHD-focused Pomodoro terminal application with Focus mode integration and task management"
+authors = ["Patrick Priestley <patrick.priestley@outlook.com>"]
 license = "MIT"
 repository = "https://github.com/PatrickPriestley/pomo-tui"
 homepage = "https://github.com/PatrickPriestley/pomo-tui"
 readme = "README.md"
-keywords = ["pomodoro", "productivity", "tui", "terminal", "breathing"]
+keywords = ["pomodoro", "productivity", "tui", "terminal", "adhd", "focus"]
 categories = ["command-line-utilities"]
 
 [profile.release]

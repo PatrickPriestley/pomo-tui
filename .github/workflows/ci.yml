@@ -64,15 +64,6 @@ jobs:
     
     - name: Run tests
       run: cargo test --verbose --all-features
-    
-    - name: Run contract tests
-      run: cargo test --test contract --verbose
-    
-    - name: Run integration tests  
-      run: cargo test --test integration --verbose
-    
-    - name: Run end-to-end tests
-      run: cargo test --test e2e --verbose
 
   build:
     name: Build

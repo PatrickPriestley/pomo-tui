@@ -160,7 +160,7 @@ jobs:
     name: Publish to crates.io
     needs: create-release
     runs-on: ubuntu-latest
-    if: "!contains(github.ref, '-')" # Only publish stable releases
+    if: ${{ !contains(github.ref, '-') }} # Only publish stable releases
     
     steps:
       - name: Checkout
@@ -184,7 +184,7 @@ jobs:
     name: Update Homebrew Formula
     needs: [create-release, build-and-upload]
     runs-on: ubuntu-latest
-    if: "!contains(github.ref, '-')" # Only update for stable releases
+    if: ${{ !contains(github.ref, '-') }} # Only update for stable releases
     
     steps:
       - name: Checkout homebrew-tap repo
