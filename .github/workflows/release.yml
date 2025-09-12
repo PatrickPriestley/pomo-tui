@@ -9,8 +9,42 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create release
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --title "Release ${{ github.ref_name }}" \
+            --notes "Release notes for pomo-tui ${{ github.ref_name }}
+
+            ## Features
+            - ADHD-focused Pomodoro timer with Focus mode integration
+            - Break management with shorten/extend options  
+            - Breathing exercises during breaks
+            - Terminal user interface
+            - Cross-platform support
+
+            ## Installation
+
+            ### Homebrew (macOS/Linux)
+            \`\`\`bash
+            brew tap PatrickPriestley/tap
+            brew install pomo-tui
+            \`\`\`
+
+            ### Binary Download
+            Download the appropriate binary for your platform from the assets below.
+
+            ## Changes
+            See commit history for detailed changes."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-and-upload:
     name: Build and Upload
+    needs: create-release
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -88,36 +122,6 @@ jobs:
             tar -czf ../${{ matrix.name }}.tar.gz pomo-tui
           fi
 
-      - name: Create release (first matrix job only)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          gh release create ${{ github.ref_name }} \
-            --title "Release ${{ github.ref_name }}" \
-            --notes "Release notes for pomo-tui ${{ github.ref_name }}
-
-            ## Features
-            - ADHD-focused Pomodoro timer with Focus mode integration
-            - Break management with shorten/extend options  
-            - Breathing exercises during breaks
-            - Terminal user interface
-            - Cross-platform support
-
-            ## Installation
-
-            ### Homebrew (macOS/Linux)
-            \`\`\`bash
-            brew tap PatrickPriestley/tap
-            brew install pomo-tui
-            \`\`\`
-
-            ### Binary Download
-            Download the appropriate binary for your platform from the assets below.
-
-            ## Changes
-            See commit history for detailed changes."
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Upload Release Asset (Windows)
         if: matrix.os == 'windows-latest'
         run: gh release upload ${{ github.ref_name }} ./${{ matrix.name }}.zip
@@ -133,7 +137,7 @@ jobs:
   publish-crates:
     name: Publish to crates.io
     runs-on: ubuntu-latest
-    if: ${{ !contains(github.ref, '-') }} # Only publish stable releases
+    if: ${{ !contains(github.ref, '-') && secrets.CRATES_IO_TOKEN != '' }} # Only publish stable releases with token
     
     steps:
       - name: Checkout
@@ -144,8 +148,8 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev
+          # No special dependencies needed for basic TUI
+          echo "No additional dependencies required"
 
       - name: Login to crates.io
         run: cargo login ${{ secrets.CRATES_IO_TOKEN }}
@@ -191,38 +195,3 @@ jobs:
           git commit -m "Update pomo-tui to v${VERSION}"
           git push
 
-  generate-completions:
-    name: Generate Shell Completions
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev
-
-      - name: Build binary
-        run: cargo build --release
-
-      - name: Generate completions
-        run: |
-          mkdir -p completions
-          ./target/release/pomo-tui completion bash > completions/pomo-tui.bash
-          ./target/release/pomo-tui completion zsh > completions/_pomo-tui
-          ./target/release/pomo-tui completion fish > completions/pomo-tui.fish
-          ./target/release/pomo-tui completion powershell > completions/pomo-tui.ps1
-
-      - name: Create completions archive
-        run: |
-          tar -czf pomo-tui-completions.tar.gz -C completions .
-
-      - name: Upload completions
-        run: gh release upload ${{ github.ref_name }} ./pomo-tui-completions.tar.gz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
