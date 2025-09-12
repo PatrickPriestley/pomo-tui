@@ -193,7 +193,6 @@ jobs:
 
   generate-completions:
     name: Generate Shell Completions
-    needs: create-release
     runs-on: ubuntu-latest
     
     steps:
