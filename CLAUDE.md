@@ -6,22 +6,25 @@ ADHD-focused Pomodoro terminal application built with Rust and Ratatui for high-
 ## Tech Stack
 - **Language**: Rust 1.75+
 - **UI Framework**: Ratatui (terminal UI)
-- **Database**: SQLite with sqlx
-- **Audio**: rodio for sound playback
 - **Testing**: cargo test with TDD approach
-- **Logging**: tracing crate
+- **Async Runtime**: tokio
+- **Cross-platform**: crossterm for terminal handling
 
 ## Project Structure
 ```
 src/
-├── lib/           # Core libraries
-│   ├── timer/     # Timer logic, Duration-based precision
-│   ├── tasks/     # Task CRUD operations
-│   ├── database/  # SQLite persistence layer
-│   ├── tui/       # Ratatui UI components
-│   ├── audio/     # Sound playback (rodio)
-│   └── integrations/ # Git, GitHub, Jira, Slack
-├── cli/           # CLI argument parsing
+├── core/          # Core logic
+│   ├── timer.rs   # Timer logic, Duration-based precision
+│   ├── breathing.rs # Breathing exercises for breaks
+│   └── mod.rs     # Core module exports
+├── tui/           # Terminal UI components
+│   ├── app.rs     # Main application state and logic
+│   ├── ui.rs      # UI rendering and layout
+│   └── mod.rs     # TUI module exports
+├── integrations/  # Platform integrations
+│   ├── macos_dnd.rs # macOS Focus mode integration
+│   └── mod.rs     # Integration module exports
+├── lib.rs         # Library root
 └── main.rs        # Application entry point
 
 tests/
@@ -30,18 +33,13 @@ tests/
 └── unit/          # Module-specific tests
 ```
 
-## Key Patterns
-- **Event-driven architecture** with state machines
-- **Command pattern** for user actions
-- **TDD mandatory**: Tests written first, must fail before implementation
-- **Library-first**: Every feature as standalone library with CLI exposure
-
-## Database Schema
-- Tasks: id, title, priority, status, estimated_pomodoros
-- Sessions: id, task_id, start_time, duration, status
-- Breaks: id, session_id, type, duration
-- Preferences: Single-row config table
-- Statistics: Materialized daily aggregates
+## Key Features
+- **25-minute Pomodoro sessions** with automatic break management
+- **ADHD-focused design** with breathing exercises during breaks
+- **macOS Focus mode integration** for distraction-free sessions
+- **Terminal-based interface** using Ratatui for high performance
+- **Break customization** with shorten/extend options
+- **Session tracking** with automatic long breaks after 4 sessions
 
 ## Performance Requirements
 - Startup: <50ms

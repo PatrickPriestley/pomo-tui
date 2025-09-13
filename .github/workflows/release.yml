@@ -90,16 +90,10 @@ jobs:
       - name: Install system dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev
           if [[ "${{ matrix.target }}" == *"musl"* ]]; then
+            sudo apt-get update
             sudo apt-get install -y musl-tools
           fi
-
-      - name: Install system dependencies (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          # Audio dependencies included in macOS
 
       - name: Cache Cargo dependencies
         uses: actions/cache@v4
