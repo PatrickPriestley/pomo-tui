@@ -54,12 +54,16 @@ pub fn draw(frame: &mut Frame, app: &App) {
         ""
     };
 
-    let audio_indicator = if app.audio_is_muted() {
-        " 🔇"
-    } else if !app.audio_is_available() {
-        " 🚫"
+    let audio_indicator = if cfg!(feature = "audio") {
+        if app.audio_is_muted() {
+            " 🔇"
+        } else if !app.audio_is_available() {
+            " 🚫"
+        } else {
+            " 🔊"
+        }
     } else {
-        " 🔊"
+        ""
     };
 
     let title = match app.mode() {
@@ -481,22 +485,31 @@ fn get_wide_controls(app: &App) -> Vec<Line<'static>> {
             Span::raw(" | "),
             Span::raw("3: "),
             Span::styled("4-7-8", Style::default().fg(Color::Cyan)),
-            Span::raw(" | "),
-            Span::raw("M: "),
-            Span::styled("Mute", Style::default().fg(Color::Magenta)),
-            Span::raw(" | "),
-            Span::raw("+/-: "),
-            Span::styled("Volume", Style::default().fg(Color::Green)),
-            Span::raw(" | "),
-            Span::raw("T: "),
-            Span::styled("Test", Style::default().fg(Color::Yellow)),
+        ];
+
+        // Add audio controls if feature is enabled
+        if cfg!(feature = "audio") {
+            second_line.extend(vec![
+                Span::raw(" | "),
+                Span::raw("M: "),
+                Span::styled("Mute", Style::default().fg(Color::Magenta)),
+                Span::raw(" | "),
+                Span::raw("+/-: "),
+                Span::styled("Volume", Style::default().fg(Color::Green)),
+                Span::raw(" | "),
+                Span::raw("T: "),
+                Span::styled("Test", Style::default().fg(Color::Yellow)),
+            ]);
+        }
+
+        second_line.extend(vec![
             Span::raw(" | "),
             Span::raw("C: "),
             Span::styled("Clear", Style::default().fg(Color::Gray)),
             Span::raw(" | "),
             Span::raw("F: "),
             Span::styled("Focus Help", Style::default().fg(Color::Cyan)),
-        ];
+        ]);
 
         // Add Focus controls if supported
         if app.is_dnd_supported() {
@@ -563,24 +576,28 @@ fn get_wide_controls(app: &App) -> Vec<Line<'static>> {
             Span::styled("Quit", Style::default().fg(Color::Red)),
         ]);
 
-        let audio_line = vec![
-            Span::raw("M: "),
-            Span::styled("Mute", Style::default().fg(Color::Magenta)),
-            Span::raw(" | "),
-            Span::raw("+/-: "),
-            Span::styled("Volume", Style::default().fg(Color::Green)),
-            Span::raw(" | "),
-            Span::raw("T: "),
-            Span::styled("Test Audio", Style::default().fg(Color::Yellow)),
-            Span::raw(" | "),
-            Span::raw("C: "),
-            Span::styled("Clear", Style::default().fg(Color::Gray)),
-            Span::raw(" | "),
-            Span::raw("F: "),
-            Span::styled("Focus Help", Style::default().fg(Color::Cyan)),
-        ];
+        if cfg!(feature = "audio") {
+            let audio_line = vec![
+                Span::raw("M: "),
+                Span::styled("Mute", Style::default().fg(Color::Magenta)),
+                Span::raw(" | "),
+                Span::raw("+/-: "),
+                Span::styled("Volume", Style::default().fg(Color::Green)),
+                Span::raw(" | "),
+                Span::raw("T: "),
+                Span::styled("Test Audio", Style::default().fg(Color::Yellow)),
+                Span::raw(" | "),
+                Span::raw("C: "),
+                Span::styled("Clear", Style::default().fg(Color::Gray)),
+                Span::raw(" | "),
+                Span::raw("F: "),
+                Span::styled("Focus Help", Style::default().fg(Color::Cyan)),
+            ];
 
-        vec![Line::from(first_line), Line::from(audio_line)]
+            vec![Line::from(first_line), Line::from(audio_line)]
+        } else {
+            vec![Line::from(first_line)]
+        }
     }
 }
 
@@ -632,10 +649,16 @@ fn get_medium_controls(app: &App) -> Vec<Line<'static>> {
             Span::raw(" | "),
             Span::raw("3: "),
             Span::styled("4-7-8", Style::default().fg(Color::Cyan)),
-            Span::raw(" | "),
-            Span::raw("M: "),
-            Span::styled("Mute", Style::default().fg(Color::Magenta)),
         ];
+
+        // Add audio controls if feature is enabled
+        if cfg!(feature = "audio") {
+            second_line.extend(vec![
+                Span::raw(" | "),
+                Span::raw("M: "),
+                Span::styled("Mute", Style::default().fg(Color::Magenta)),
+            ]);
+        }
 
         // Add Focus control for medium displays (condensed)
         if app.is_dnd_supported() {
@@ -659,16 +682,24 @@ fn get_medium_controls(app: &App) -> Vec<Line<'static>> {
             Span::styled("Skip", Style::default().fg(Color::Cyan)),
         ];
 
-        let mut second_line = vec![
-            Span::raw("M: "),
-            Span::styled("Mute", Style::default().fg(Color::Magenta)),
-            Span::raw(" | "),
-            Span::raw("+/-: "),
-            Span::styled("Vol", Style::default().fg(Color::Green)),
-            Span::raw(" | "),
+        let mut second_line = vec![];
+        
+        // Add audio controls if feature is enabled
+        if cfg!(feature = "audio") {
+            second_line.extend(vec![
+                Span::raw("M: "),
+                Span::styled("Mute", Style::default().fg(Color::Magenta)),
+                Span::raw(" | "),
+                Span::raw("+/-: "),
+                Span::styled("Vol", Style::default().fg(Color::Green)),
+                Span::raw(" | "),
+            ]);
+        }
+        
+        second_line.extend(vec![
             Span::raw("Q/Esc: "),
             Span::styled("Quit", Style::default().fg(Color::Red)),
-        ];
+        ]);
 
         // Add Focus control to second line for Pomodoro mode
         if app.is_dnd_supported() {
@@ -781,9 +812,6 @@ mod tests {
         let app = App::new().unwrap();
         let controls = get_responsive_controls(&app, 100);
 
-        // Wide terminal should have two lines for Pomodoro mode (main controls + audio controls)
-        assert_eq!(controls.len(), 2);
-
         // Should contain all expected controls in first line
         let control_text = format!("{:?}", controls[0]);
         assert!(control_text.contains("Start/Pause"));
@@ -791,11 +819,19 @@ mod tests {
         assert!(control_text.contains("Reset"));
         assert!(control_text.contains("Quit"));
 
-        // Should contain audio controls in second line
-        let audio_text = format!("{:?}", controls[1]);
-        assert!(audio_text.contains("Mute"));
-        assert!(audio_text.contains("Volume"));
-        assert!(audio_text.contains("Test Audio"));
+        if cfg!(feature = "audio") {
+            // Wide terminal should have two lines for Pomodoro mode (main controls + audio controls)
+            assert_eq!(controls.len(), 2);
+            
+            // Should contain audio controls in second line
+            let audio_text = format!("{:?}", controls[1]);
+            assert!(audio_text.contains("Mute"));
+            assert!(audio_text.contains("Volume"));
+            assert!(audio_text.contains("Test Audio"));
+        } else {
+            // Without audio feature, should have single line
+            assert_eq!(controls.len(), 1);
+        }
     }
 
     #[test]

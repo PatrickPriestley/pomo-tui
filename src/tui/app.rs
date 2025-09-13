@@ -1,3 +1,4 @@
+#[cfg(feature = "audio")]
 use crate::audio::{AudioManager, SoundType};
 use crate::core::{BreathingExercise, BreathingPattern, Timer};
 use crate::integrations::{DndState, MacOSDndController};
@@ -21,6 +22,7 @@ pub struct App {
     dnd_auto_enabled: bool,
     dnd_state: DndState,
     status_message: Option<String>,
+    #[cfg(feature = "audio")]
     audio_manager: AudioManager,
 }
 
@@ -63,6 +65,7 @@ impl App {
         }
 
         // Initialize audio manager
+        #[cfg(feature = "audio")]
         let audio_manager = AudioManager::default();
 
         Ok(Self {
@@ -76,6 +79,7 @@ impl App {
             dnd_auto_enabled: true, // Default to auto-enable DND
             dnd_state,
             status_message,
+            #[cfg(feature = "audio")]
             audio_manager,
         })
     }
@@ -199,9 +203,13 @@ impl App {
             KeyCode::Char('1') => self.set_breathing_pattern(BreathingPattern::Simple),
             KeyCode::Char('2') => self.set_breathing_pattern(BreathingPattern::Box),
             KeyCode::Char('3') => self.set_breathing_pattern(BreathingPattern::FourSevenEight),
+            #[cfg(feature = "audio")]
             KeyCode::Char('m') => self.toggle_audio_mute(),
+            #[cfg(feature = "audio")]
             KeyCode::Char('+') | KeyCode::Char('=') => self.increase_volume(),
+            #[cfg(feature = "audio")]
             KeyCode::Char('-') => self.decrease_volume(),
+            #[cfg(feature = "audio")]
             KeyCode::Char('t') => self.play_test_sound(),
             _ => {}
         }
@@ -296,6 +304,7 @@ impl App {
         }
     }
 
+    #[cfg(feature = "audio")]
     fn toggle_audio_mute(&mut self) {
         let is_muted = self.audio_manager.toggle_mute();
         if is_muted {
@@ -305,6 +314,7 @@ impl App {
         }
     }
 
+    #[cfg(feature = "audio")]
     fn increase_volume(&mut self) {
         let current_volume = self.audio_manager.volume();
         let new_volume = (current_volume + 0.1).min(1.0);
@@ -313,6 +323,7 @@ impl App {
         self.status_message = Some(format!("🔊 Volume: {}%", percentage));
     }
 
+    #[cfg(feature = "audio")]
     fn decrease_volume(&mut self) {
         let current_volume = self.audio_manager.volume();
         let new_volume = (current_volume - 0.1).max(0.0);
@@ -321,6 +332,7 @@ impl App {
         self.status_message = Some(format!("🔉 Volume: {}%", percentage));
     }
 
+    #[cfg(feature = "audio")]
     fn play_test_sound(&mut self) {
         match self.audio_manager.play_test_sound() {
             Ok(()) => {
@@ -340,16 +352,23 @@ impl App {
             self.timer.stop();
             
             // Play appropriate notification sound
-            match self.mode {
-                AppMode::Pomodoro => {
-                    // Session completed - time for a break
-                    let _ = self.audio_manager.play_notification(SoundType::SessionComplete);
-                    self.session_count += 1;
+            #[cfg(feature = "audio")]
+            {
+                match self.mode {
+                    AppMode::Pomodoro => {
+                        // Session completed - time for a break
+                        let _ = self.audio_manager.play_notification(SoundType::SessionComplete);
+                    }
+                    AppMode::Break => {
+                        // Break completed - time to work
+                        let _ = self.audio_manager.play_notification(SoundType::BreakComplete);
+                    }
                 }
-                AppMode::Break => {
-                    // Break completed - time to work
-                    let _ = self.audio_manager.play_notification(SoundType::BreakComplete);
-                }
+            }
+            
+            // Update session count
+            if self.mode == AppMode::Pomodoro {
+                self.session_count += 1;
             }
         }
 
@@ -382,6 +401,7 @@ impl App {
         self.breathing_exercise = Some(BreathingExercise::new(BreathingPattern::Simple));
         
         // Play special sound for long break
+        #[cfg(feature = "audio")]
         if is_long_break {
             let _ = self.audio_manager.play_notification(SoundType::LongBreakStart);
         }
@@ -440,16 +460,34 @@ impl App {
         self.dnd_controller.is_some()
     }
 
+    #[cfg(feature = "audio")]
     pub fn audio_is_muted(&self) -> bool {
         self.audio_manager.is_muted()
     }
 
+    #[cfg(not(feature = "audio"))]
+    pub fn audio_is_muted(&self) -> bool {
+        false
+    }
+
+    #[cfg(feature = "audio")]
     pub fn audio_is_available(&self) -> bool {
         self.audio_manager.is_available()
     }
 
+    #[cfg(not(feature = "audio"))]
+    pub fn audio_is_available(&self) -> bool {
+        false
+    }
+
+    #[cfg(feature = "audio")]
     pub fn audio_volume(&self) -> f32 {
         self.audio_manager.volume()
+    }
+
+    #[cfg(not(feature = "audio"))]
+    pub fn audio_volume(&self) -> f32 {
+        0.0
     }
 
     /// Toggle DND auto-enable setting

@@ -109,7 +109,12 @@ jobs:
 
       - name: Build release binary
         run: |
-          cargo build --release --target ${{ matrix.target }} --verbose
+          if [[ "${{ matrix.target }}" == *"musl"* ]]; then
+            # Build without audio for musl targets (static linking issues)
+            cargo build --release --target ${{ matrix.target }} --no-default-features --verbose
+          else
+            cargo build --release --target ${{ matrix.target }} --verbose
+          fi
 
       - name: Strip binary (Unix)
         if: matrix.os != 'windows-latest'
