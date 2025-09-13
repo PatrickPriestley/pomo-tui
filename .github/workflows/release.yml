@@ -90,8 +90,9 @@ jobs:
       - name: Install system dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config
           if [[ "${{ matrix.target }}" == *"musl"* ]]; then
-            sudo apt-get update
             sudo apt-get install -y musl-tools
           fi
 
@@ -155,8 +156,8 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          # No special dependencies needed for basic TUI
-          echo "No additional dependencies required"
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config
 
       - name: Login to crates.io
         run: |
