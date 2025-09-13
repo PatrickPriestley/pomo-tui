@@ -1,3 +1,4 @@
+use crate::audio::{AudioManager, SoundType};
 use crate::core::{BreathingExercise, BreathingPattern, Timer};
 use crate::integrations::{DndState, MacOSDndController};
 use crossterm::{
@@ -20,6 +21,7 @@ pub struct App {
     dnd_auto_enabled: bool,
     dnd_state: DndState,
     status_message: Option<String>,
+    audio_manager: AudioManager,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -43,15 +45,25 @@ impl App {
             // Get initial state
             dnd_state = controller.get_state().unwrap_or(DndState::Unknown);
 
-            // Check if Focus mode is properly configured
-            if let Ok((enable_exists, disable_exists)) = controller.check_shortcuts_exist() {
-                if !enable_exists || !disable_exists {
-                    // Focus mode not configured - show warning in status only
-                    status_message =
-                        Some("⚠️ Focus mode not configured - press 'F' for help".to_string());
+            // Check if Focus mode is properly configured (handle errors gracefully)
+            match controller.check_shortcuts_exist() {
+                Ok((enable_exists, disable_exists)) => {
+                    if !enable_exists || !disable_exists {
+                        // Focus mode not configured - show warning in status only
+                        status_message =
+                            Some("⚠️ Focus mode not configured - press 'F' for help".to_string());
+                    }
+                }
+                Err(_) => {
+                    // If shortcuts check fails (permissions, device not configured, etc.)
+                    // just show a warning and continue - don't crash the app
+                    status_message = Some("⚠️ Focus mode unavailable - press 'F' for help".to_string());
                 }
             }
         }
+
+        // Initialize audio manager
+        let audio_manager = AudioManager::default();
 
         Ok(Self {
             timer: Timer::new(25 * 60), // 25 minute pomodoro
@@ -64,12 +76,22 @@ impl App {
             dnd_auto_enabled: true, // Default to auto-enable DND
             dnd_state,
             status_message,
+            audio_manager,
         })
     }
 
     pub async fn run(&mut self) -> Result<(), Box<dyn Error>> {
         // Setup terminal
-        enable_raw_mode()?;
+        enable_raw_mode().map_err(|e| {
+            // Provide helpful error message for terminal setup failures
+            Box::<dyn Error>::from(format!(
+                "Failed to initialize terminal: {}\n\n\
+                This typically means pomo-tui is not running in a proper terminal.\n\
+                Please run pomo-tui directly from your terminal (Terminal.app, iTerm2, etc.)\n\
+                rather than through an IDE or other application.",
+                e
+            ))
+        })?;
         io::stdout().execute(EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(io::stdout());
         let mut terminal = Terminal::new(backend)?;
@@ -177,6 +199,10 @@ impl App {
             KeyCode::Char('1') => self.set_breathing_pattern(BreathingPattern::Simple),
             KeyCode::Char('2') => self.set_breathing_pattern(BreathingPattern::Box),
             KeyCode::Char('3') => self.set_breathing_pattern(BreathingPattern::FourSevenEight),
+            KeyCode::Char('m') => self.toggle_audio_mute(),
+            KeyCode::Char('+') | KeyCode::Char('=') => self.increase_volume(),
+            KeyCode::Char('-') => self.decrease_volume(),
+            KeyCode::Char('t') => self.play_test_sound(),
             _ => {}
         }
     }
@@ -270,13 +296,60 @@ impl App {
         }
     }
 
+    fn toggle_audio_mute(&mut self) {
+        let is_muted = self.audio_manager.toggle_mute();
+        if is_muted {
+            self.status_message = Some("🔇 Audio muted".to_string());
+        } else {
+            self.status_message = Some("🔊 Audio unmuted".to_string());
+        }
+    }
+
+    fn increase_volume(&mut self) {
+        let current_volume = self.audio_manager.volume();
+        let new_volume = (current_volume + 0.1).min(1.0);
+        self.audio_manager.set_volume(new_volume);
+        let percentage = (new_volume * 100.0).round() as u8;
+        self.status_message = Some(format!("🔊 Volume: {}%", percentage));
+    }
+
+    fn decrease_volume(&mut self) {
+        let current_volume = self.audio_manager.volume();
+        let new_volume = (current_volume - 0.1).max(0.0);
+        self.audio_manager.set_volume(new_volume);
+        let percentage = (new_volume * 100.0).round() as u8;
+        self.status_message = Some(format!("🔉 Volume: {}%", percentage));
+    }
+
+    fn play_test_sound(&mut self) {
+        match self.audio_manager.play_test_sound() {
+            Ok(()) => {
+                let volume = (self.audio_manager.volume() * 100.0).round() as u8;
+                let mute_status = if self.audio_manager.is_muted() { " (muted)" } else { "" };
+                self.status_message = Some(format!("🎵 Test sound played - Volume: {}{}", volume, mute_status));
+            }
+            Err(_) => {
+                self.status_message = Some("❌ Audio not available".to_string());
+            }
+        }
+    }
+
     fn update(&mut self) {
         // Check if timer expired
         if self.timer.is_expired() {
             self.timer.stop();
-            // Increment session count when pomodoro completes
-            if self.mode == AppMode::Pomodoro {
-                self.session_count += 1;
+            
+            // Play appropriate notification sound
+            match self.mode {
+                AppMode::Pomodoro => {
+                    // Session completed - time for a break
+                    let _ = self.audio_manager.play_notification(SoundType::SessionComplete);
+                    self.session_count += 1;
+                }
+                AppMode::Break => {
+                    // Break completed - time to work
+                    let _ = self.audio_manager.play_notification(SoundType::BreakComplete);
+                }
             }
         }
 
@@ -296,7 +369,8 @@ impl App {
     }
 
     fn start_break(&mut self) {
-        let break_duration = if self.session_count % 4 == 0 {
+        let is_long_break = self.session_count % 4 == 0;
+        let break_duration = if is_long_break {
             15 * 60 // Long break after 4 sessions
         } else {
             5 * 60 // Short break
@@ -306,6 +380,12 @@ impl App {
         self.timer = Timer::new(break_duration);
         self.break_was_shortened = false; // Reset shortened state for new break
         self.breathing_exercise = Some(BreathingExercise::new(BreathingPattern::Simple));
+        
+        // Play special sound for long break
+        if is_long_break {
+            let _ = self.audio_manager.play_notification(SoundType::LongBreakStart);
+        }
+        
         // Disable DND when starting a break
         self.auto_disable_dnd();
         // Don't auto-start - wait for user to press space
@@ -358,6 +438,18 @@ impl App {
 
     pub fn is_dnd_supported(&self) -> bool {
         self.dnd_controller.is_some()
+    }
+
+    pub fn audio_is_muted(&self) -> bool {
+        self.audio_manager.is_muted()
+    }
+
+    pub fn audio_is_available(&self) -> bool {
+        self.audio_manager.is_available()
+    }
+
+    pub fn audio_volume(&self) -> f32 {
+        self.audio_manager.volume()
     }
 
     /// Toggle DND auto-enable setting
