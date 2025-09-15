@@ -13,7 +13,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         // Check if we have setup instructions that need more space
         let status_height = if let Some(msg) = app.status_message() {
             if msg.contains("📋 Focus Mode Setup Instructions") {
-                12 // More space for setup instructions
+                20 // More space for setup instructions (increased from 12)
             } else {
                 4 // Normal space for other status messages
             }
@@ -142,7 +142,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
             // Split message into lines and limit length for better formatting
             let lines: Vec<&str> = msg.lines().collect();
             let is_setup_instructions = msg.contains("📋 Focus Mode Setup Instructions");
-            let max_lines = if is_setup_instructions { 10 } else { 3 };
+            let max_lines = if is_setup_instructions { 30 } else { 3 };
 
             let display_text = if lines.len() > max_lines {
                 // If too many lines, show first few and indicate more
