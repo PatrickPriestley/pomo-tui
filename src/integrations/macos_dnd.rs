@@ -456,23 +456,31 @@ impl MacOSDndController {
 
 1. Open the Shortcuts app
 
-2. Create shortcut: "{}"
-   • Add action: "Set Focus" 
-   • Choose Focus mode (Work/Do Not Disturb/etc.)
+2. Create "{}" shortcut:
+   • Click the + button to create a new shortcut
+   • Name it exactly: "{}"
+   • Add action: Search for and add "Set Focus" action
+   • Choose your Focus mode (Work/Do Not Disturb/etc.)
    • Set duration: "Until I turn it off"
+   • Save the shortcut
 
-3. Create shortcut: "{}"
-   • Add action: "Turn Off Focus"
+3. Create "{}" shortcut:
+   • Click the + button to create a new shortcut
+   • Name it exactly: "{}"
+   • Add action: Search for and add "Turn Off Focus" action
+   • Save the shortcut
 
 Once created, the app can control Focus automatically.
 
-Note: You can name shortcuts anything, but they must contain
-the exact actions "Set Focus" and "Turn Off Focus".
+Note: The shortcut names must match exactly as shown above.
 
 Alternative: Customize names with environment variables:
   FOCUS_ENABLE_SHORTCUT="Your Enable Name"
   FOCUS_DISABLE_SHORTCUT="Your Disable Name""#,
-            self.enable_shortcut_name, self.disable_shortcut_name
+            self.enable_shortcut_name, 
+            self.enable_shortcut_name,
+            self.disable_shortcut_name,
+            self.disable_shortcut_name
         )
     }
 }
