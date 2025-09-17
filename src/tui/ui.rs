@@ -1,8 +1,10 @@
+use crate::core::breathing::BreathPhase;
 use crate::integrations::DndState;
 use crate::tui::app::{App, AppMode};
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Gauge, Paragraph},
+    symbols,
+    widgets::{canvas::{Canvas, Circle, Context}, Block, Borders, Gauge, Paragraph},
 };
 
 pub fn draw(frame: &mut Frame, app: &App) {
@@ -227,38 +229,70 @@ fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
     // Only show breathing exercise when timer is running
     if app.timer().state() == crate::core::timer::TimerState::Running {
         if let Some(exercise) = app.breathing_exercise() {
+            // Split the area for circle and text
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(10),  // Circle area
+                    Constraint::Length(4), // Info area
+                ])
+                .split(area);
+
+            // Render the breathing circle
+            render_breathing_circle(frame, exercise, chunks[0]);
+
+            // Render breathing info
             let instruction = exercise.get_instruction();
             let pattern = exercise.get_pattern_name();
             let cycles = exercise.get_cycle_count();
             let remaining = exercise.get_remaining_in_phase();
-            let progress = exercise.get_phase_progress();
+
+            // Calculate breathing session progress if applicable
+            let session_info = if let Some(duration) = app.breathing_duration() {
+                let elapsed = exercise.get_total_elapsed();
+                let remaining_session = duration.saturating_sub(elapsed);
+                format!(" | Session: {:.0}s left", remaining_session.as_secs_f64())
+            } else {
+                String::new()
+            };
 
             let content = vec![
                 Line::from(vec![
-                    Span::raw("Pattern: "),
-                    Span::styled(pattern, Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        instruction,
+                        Style::default()
+                            .fg(get_phase_color(exercise.get_current_phase()))
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 ]),
-                Line::from(""),
-                Line::from(vec![Span::styled(
-                    instruction,
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                )]),
-                Line::from(""),
-                Line::from(format!("Phase: {:.0}s remaining", remaining.as_secs_f64())),
-                Line::from(format!("Cycles completed: {}", cycles)),
-                Line::from(""),
-                Line::from(create_progress_bar(progress)),
+                Line::from(format!("{} | Cycle {}{}", pattern, cycles + 1, session_info)),
+                Line::from(format!("{:.0}s", remaining.as_secs_f64())),
             ];
 
-            let breathing_widget = Paragraph::new(content).alignment(Alignment::Center).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Breathing Exercise"),
-            );
+            let info_widget = Paragraph::new(content)
+                .alignment(Alignment::Center)
+                .block(
+                    Block::default()
+                        .borders(Borders::TOP)
+                );
 
-            frame.render_widget(breathing_widget, area);
+            frame.render_widget(info_widget, chunks[1]);
+        } else if app.breathing_complete() {
+            // Show rest mode
+            let break_widget = Paragraph::new(vec![
+                Line::from("☕ Rest and Stretch"),
+                Line::from(""),
+                Line::from("Take this time to:"),
+                Line::from("• Stand up and stretch"),
+                Line::from("• Look away from the screen"),
+                Line::from("• Hydrate"),
+                Line::from(""),
+                Line::from("Press 'T' to toggle breathing exercises"),
+            ])
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL).title("Break Time"));
+
+            frame.render_widget(break_widget, area);
         } else {
             let break_widget = Paragraph::new("Enjoy your break!")
                 .alignment(Alignment::Center)
@@ -297,7 +331,7 @@ fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
             ])
         };
 
-        let box_line = if selected_pattern == crate::core::BreathingPattern::Box {
+        let coherent_line = if selected_pattern == crate::core::BreathingPattern::Coherent {
             Line::from(vec![
                 Span::styled(
                     "✓ ",
@@ -307,7 +341,7 @@ fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
                 ),
                 Span::raw("2: "),
                 Span::styled(
-                    "Box (4-4-4-4)",
+                    "Coherent (5-5)",
                     Style::default()
                         .fg(Color::Green)
                         .add_modifier(Modifier::BOLD),
@@ -316,12 +350,12 @@ fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
         } else {
             Line::from(vec![
                 Span::raw("  2: "),
-                Span::styled("Box (4-4-4-4)", Style::default().fg(Color::Cyan)),
+                Span::styled("Coherent (5-5)", Style::default().fg(Color::Cyan)),
             ])
         };
 
-        let four_seven_eight_line =
-            if selected_pattern == crate::core::BreathingPattern::FourSevenEight {
+        let short_box_line =
+            if selected_pattern == crate::core::BreathingPattern::ShortBox {
                 Line::from(vec![
                     Span::styled(
                         "✓ ",
@@ -331,7 +365,7 @@ fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
                     ),
                     Span::raw("3: "),
                     Span::styled(
-                        "4-7-8",
+                        "Short Box (3-3-3-3)",
                         Style::default()
                             .fg(Color::Green)
                             .add_modifier(Modifier::BOLD),
@@ -340,7 +374,7 @@ fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
             } else {
                 Line::from(vec![
                     Span::raw("  3: "),
-                    Span::styled("4-7-8", Style::default().fg(Color::Cyan)),
+                    Span::styled("Short Box (3-3-3-3)", Style::default().fg(Color::Cyan)),
                 ])
             };
 
@@ -349,8 +383,8 @@ fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
             Line::from("Choose a breathing pattern:"),
             Line::from(""),
             simple_line,
-            box_line,
-            four_seven_eight_line,
+            coherent_line,
+            short_box_line,
             Line::from(""),
             Line::from(vec![Span::styled(
                 "Press Space to start break",
@@ -476,16 +510,25 @@ fn get_wide_controls(app: &App) -> Vec<Line<'static>> {
             Span::styled("Quit", Style::default().fg(Color::Red)),
         ]);
 
-        let mut second_line = vec![
-            Span::raw("1: "),
-            Span::styled("Simple", Style::default().fg(Color::Cyan)),
-            Span::raw(" | "),
-            Span::raw("2: "),
-            Span::styled("Box", Style::default().fg(Color::Cyan)),
-            Span::raw(" | "),
-            Span::raw("3: "),
-            Span::styled("4-7-8", Style::default().fg(Color::Cyan)),
-        ];
+        let mut second_line = vec![];
+
+        // Show breathing controls if in break mode
+        if app.breathing_enabled() && app.mode() == AppMode::Break {
+            second_line.extend(vec![
+                Span::raw("X: "),
+                Span::styled("Skip Breathing", Style::default().fg(Color::Magenta)),
+                Span::raw(" | "),
+            ]);
+        }
+
+        second_line.extend(vec![
+            Span::raw("T: "),
+            if app.breathing_enabled() {
+                Span::styled("Breathing ON", Style::default().fg(Color::Green))
+            } else {
+                Span::styled("Breathing OFF", Style::default().fg(Color::DarkGray))
+            },
+        ]);
 
         // Add audio controls if feature is enabled
         if cfg!(feature = "audio") {
@@ -497,7 +540,7 @@ fn get_wide_controls(app: &App) -> Vec<Line<'static>> {
                 Span::raw("+/-: "),
                 Span::styled("Volume", Style::default().fg(Color::Green)),
                 Span::raw(" | "),
-                Span::raw("T: "),
+                Span::raw("V: "),
                 Span::styled("Test", Style::default().fg(Color::Yellow)),
             ]);
         }
@@ -796,10 +839,94 @@ fn get_narrow_controls(app: &App) -> Vec<Line<'static>> {
     }
 }
 
-fn create_progress_bar(progress: f64) -> String {
-    let filled = (progress * 20.0) as usize;
-    let empty = 20 - filled;
-    format!("[{}{}]", "█".repeat(filled), "░".repeat(empty))
+
+fn render_breathing_circle(frame: &mut Frame, exercise: &crate::core::BreathingExercise, area: Rect) {
+    let progress = exercise.get_phase_progress();
+    let phase = exercise.get_current_phase();
+
+    // Calculate circle radius based on breath phase
+    let base_radius = 4.0;
+    let max_expansion = 8.0; // Reduced for better visibility
+
+    // Apply easing for smoother animation
+    let eased_progress = ease_in_out(progress);
+
+    let radius = match phase {
+        BreathPhase::Inhale => {
+            // Expand from base to max with easing
+            base_radius + (eased_progress * max_expansion)
+        },
+        BreathPhase::Hold => {
+            // Stay at max size
+            base_radius + max_expansion
+        },
+        BreathPhase::Exhale => {
+            // Contract from max to base with easing
+            base_radius + max_expansion * (1.0 - eased_progress)
+        },
+        BreathPhase::Rest => {
+            // Stay at base size
+            base_radius
+        },
+        BreathPhase::Transition => {
+            // Hold at appropriate size - don't make it larger than breathing phases
+            if exercise.is_post_exhale_transition() {
+                // After exhale, hold at contracted size
+                base_radius
+            } else {
+                // After inhale, hold at expanded size
+                base_radius + max_expansion
+            }
+        },
+    };
+
+    let color = get_phase_color(phase);
+
+    let canvas = Canvas::default()
+        .block(Block::default().borders(Borders::NONE))
+        .x_bounds([-15.0, 15.0])
+        .y_bounds([-15.0, 15.0])
+        .marker(symbols::Marker::Braille)
+        .paint(move |ctx: &mut Context| {
+            // Draw the breathing circle
+            ctx.draw(&Circle {
+                x: 0.0,
+                y: 0.0,
+                radius,
+                color,
+            });
+
+            // Draw a smaller inner circle for visual appeal
+            if radius > 3.0 {
+                ctx.draw(&Circle {
+                    x: 0.0,
+                    y: 0.0,
+                    radius: radius * 0.3,
+                    color: Color::DarkGray,
+                });
+            }
+        });
+
+    frame.render_widget(canvas, area);
+}
+
+fn get_phase_color(phase: BreathPhase) -> Color {
+    match phase {
+        BreathPhase::Inhale => Color::Green,
+        BreathPhase::Hold => Color::Yellow,
+        BreathPhase::Exhale => Color::Blue,
+        BreathPhase::Rest => Color::Magenta,
+        BreathPhase::Transition => Color::Cyan, // Soft transition color
+    }
+}
+
+// Easing function for smoother animations
+fn ease_in_out(t: f64) -> f64 {
+    if t < 0.5 {
+        2.0 * t * t
+    } else {
+        1.0 - 2.0 * (1.0 - t) * (1.0 - t)
+    }
 }
 
 #[cfg(test)]

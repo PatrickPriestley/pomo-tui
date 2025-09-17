@@ -14,6 +14,9 @@ use tokio::time;
 pub struct App {
     timer: Timer,
     breathing_exercise: Option<BreathingExercise>,
+    breathing_duration: Option<Duration>,
+    breathing_enabled: bool,
+    breathing_complete: bool,
     mode: AppMode,
     should_quit: bool,
     session_count: u32,
@@ -71,6 +74,9 @@ impl App {
         Ok(Self {
             timer: Timer::new(25 * 60), // 25 minute pomodoro
             breathing_exercise: None,
+            breathing_duration: Some(Duration::from_secs(90)), // 1.5 minutes default
+            breathing_enabled: true,
+            breathing_complete: false,
             mode: AppMode::Pomodoro,
             should_quit: false,
             session_count: 0,
@@ -154,6 +160,8 @@ impl App {
             KeyCode::Char('b') => self.skip_break(),
             KeyCode::Char('h') => self.shorten_break(),
             KeyCode::Char('e') => self.extend_break(),
+            KeyCode::Char('t') => self.toggle_breathing(),
+            KeyCode::Char('x') => self.skip_breathing(),
             KeyCode::Char('d') => {
                 match self.toggle_dnd() {
                     Ok(_) => {
@@ -201,8 +209,8 @@ impl App {
                 }
             }
             KeyCode::Char('1') => self.set_breathing_pattern(BreathingPattern::Simple),
-            KeyCode::Char('2') => self.set_breathing_pattern(BreathingPattern::Box),
-            KeyCode::Char('3') => self.set_breathing_pattern(BreathingPattern::FourSevenEight),
+            KeyCode::Char('2') => self.set_breathing_pattern(BreathingPattern::Coherent),
+            KeyCode::Char('3') => self.set_breathing_pattern(BreathingPattern::ShortBox),
             #[cfg(feature = "audio")]
             KeyCode::Char('m') => self.toggle_audio_mute(),
             #[cfg(feature = "audio")]
@@ -210,7 +218,7 @@ impl App {
             #[cfg(feature = "audio")]
             KeyCode::Char('-') => self.decrease_volume(),
             #[cfg(feature = "audio")]
-            KeyCode::Char('t') => self.play_test_sound(),
+            KeyCode::Char('v') => self.play_test_sound(),
             _ => {}
         }
     }
@@ -246,6 +254,7 @@ impl App {
         self.timer.reset();
         if self.mode == AppMode::Break {
             self.breathing_exercise = None;
+            self.breathing_complete = false;
         }
     }
 
@@ -273,10 +282,10 @@ impl App {
             if current_duration > short_break_duration {
                 self.timer = Timer::new(short_break_duration);
                 self.break_was_shortened = true;
-                // Maintain breathing exercise if present
-                if self.breathing_exercise.is_none() {
+                // Maintain breathing exercise if present and enabled
+                if self.breathing_enabled && self.breathing_exercise.is_none() {
                     self.breathing_exercise =
-                        Some(BreathingExercise::new(BreathingPattern::Simple));
+                        Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
                 }
             }
         }
@@ -289,18 +298,35 @@ impl App {
                 let long_break_duration = 15 * 60; // 15 minutes
                 self.timer = Timer::new(long_break_duration);
                 self.break_was_shortened = false;
-                // Maintain breathing exercise if present
-                if self.breathing_exercise.is_none() {
+                // Maintain breathing exercise if present and enabled
+                if self.breathing_enabled && self.breathing_exercise.is_none() {
                     self.breathing_exercise =
-                        Some(BreathingExercise::new(BreathingPattern::Simple));
+                        Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
                 }
             }
         }
     }
 
     fn set_breathing_pattern(&mut self, pattern: BreathingPattern) {
-        if self.mode == AppMode::Break {
+        if self.mode == AppMode::Break && self.breathing_enabled {
             self.breathing_exercise = Some(BreathingExercise::new(pattern));
+        }
+    }
+
+    fn toggle_breathing(&mut self) {
+        self.breathing_enabled = !self.breathing_enabled;
+        if !self.breathing_enabled {
+            self.breathing_exercise = None;
+            self.breathing_complete = true;
+        } else if self.mode == AppMode::Break && !self.breathing_complete {
+            self.breathing_exercise = Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
+        }
+    }
+
+    fn skip_breathing(&mut self) {
+        if self.mode == AppMode::Break {
+            self.breathing_exercise = None;
+            self.breathing_complete = true;
         }
     }
 
@@ -376,6 +402,14 @@ impl App {
         if self.timer.state() == crate::core::timer::TimerState::Running {
             if let Some(ref mut exercise) = self.breathing_exercise {
                 exercise.update(Duration::from_millis(100));
+
+                // Check if breathing duration is complete
+                if let Some(duration) = self.breathing_duration {
+                    if exercise.get_total_elapsed() >= duration && !self.breathing_complete {
+                        self.breathing_exercise = None;
+                        self.breathing_complete = true;
+                    }
+                }
             }
         }
     }
@@ -398,7 +432,14 @@ impl App {
         self.mode = AppMode::Break;
         self.timer = Timer::new(break_duration);
         self.break_was_shortened = false; // Reset shortened state for new break
-        self.breathing_exercise = Some(BreathingExercise::new(BreathingPattern::Simple));
+        self.breathing_complete = false;
+
+        // Only start breathing if enabled
+        if self.breathing_enabled {
+            self.breathing_exercise = Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
+        } else {
+            self.breathing_exercise = None;
+        }
         
         // Play special sound for long break
         #[cfg(feature = "audio")]
@@ -416,6 +457,7 @@ impl App {
         self.timer = Timer::new(25 * 60);
         self.break_was_shortened = false; // Reset shortened state for new pomodoro
         self.breathing_exercise = None;
+        self.breathing_complete = false;
         // DND will be enabled when timer starts (in toggle_timer)
         // Don't auto-start - wait for user to press space
     }
@@ -426,6 +468,18 @@ impl App {
 
     pub fn breathing_exercise(&self) -> Option<&BreathingExercise> {
         self.breathing_exercise.as_ref()
+    }
+
+    pub fn breathing_enabled(&self) -> bool {
+        self.breathing_enabled
+    }
+
+    pub fn breathing_complete(&self) -> bool {
+        self.breathing_complete
+    }
+
+    pub fn breathing_duration(&self) -> Option<Duration> {
+        self.breathing_duration
     }
 
     pub fn mode(&self) -> AppMode {
