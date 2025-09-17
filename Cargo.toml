@@ -1,6 +1,6 @@
 [package]
 name = "pomo-tui"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 description = "ADHD-focused Pomodoro terminal application with Focus mode integration and task management"
 authors = ["Patrick Priestley"]
