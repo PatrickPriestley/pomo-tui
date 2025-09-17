@@ -285,8 +285,15 @@ impl App {
                 self.break_was_shortened = true;
                 // Maintain breathing exercise if present and enabled
                 if self.breathing_enabled && self.breathing_exercise.is_none() {
-                    self.breathing_exercise =
-                        Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
+                    if let Some(duration) = self.breathing_duration {
+                        self.breathing_exercise = Some(BreathingExercise::new_from_duration(
+                            BreathingPattern::ExtendedExhale,
+                            duration,
+                        ));
+                    } else {
+                        self.breathing_exercise =
+                            Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
+                    }
                 }
             }
         }
@@ -301,8 +308,15 @@ impl App {
                 self.break_was_shortened = false;
                 // Maintain breathing exercise if present and enabled
                 if self.breathing_enabled && self.breathing_exercise.is_none() {
-                    self.breathing_exercise =
-                        Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
+                    if let Some(duration) = self.breathing_duration {
+                        self.breathing_exercise = Some(BreathingExercise::new_from_duration(
+                            BreathingPattern::ExtendedExhale,
+                            duration,
+                        ));
+                    } else {
+                        self.breathing_exercise =
+                            Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
+                    }
                 }
             }
         }
@@ -310,7 +324,12 @@ impl App {
 
     fn set_breathing_pattern(&mut self, pattern: BreathingPattern) {
         if self.mode == AppMode::Break && self.breathing_enabled {
-            self.breathing_exercise = Some(BreathingExercise::new(pattern));
+            if let Some(duration) = self.breathing_duration {
+                self.breathing_exercise =
+                    Some(BreathingExercise::new_from_duration(pattern, duration));
+            } else {
+                self.breathing_exercise = Some(BreathingExercise::new(pattern));
+            }
         }
     }
 
@@ -320,8 +339,15 @@ impl App {
             self.breathing_exercise = None;
             self.breathing_complete = true;
         } else if self.mode == AppMode::Break && !self.breathing_complete {
-            self.breathing_exercise =
-                Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
+            if let Some(duration) = self.breathing_duration {
+                self.breathing_exercise = Some(BreathingExercise::new_from_duration(
+                    BreathingPattern::ExtendedExhale,
+                    duration,
+                ));
+            } else {
+                self.breathing_exercise =
+                    Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
+            }
         }
     }
 
@@ -416,12 +442,10 @@ impl App {
             if let Some(ref mut exercise) = self.breathing_exercise {
                 exercise.update(Duration::from_millis(100));
 
-                // Check if breathing duration is complete
-                if let Some(duration) = self.breathing_duration {
-                    if exercise.get_total_elapsed() >= duration && !self.breathing_complete {
-                        self.breathing_exercise = None;
-                        self.breathing_complete = true;
-                    }
+                // Check if breathing session should complete (ends on exhale/post-exhale)
+                if exercise.should_complete_session() && !self.breathing_complete {
+                    self.breathing_exercise = None;
+                    self.breathing_complete = true;
                 }
             }
         }
@@ -449,8 +473,15 @@ impl App {
 
         // Only start breathing if enabled
         if self.breathing_enabled {
-            self.breathing_exercise =
-                Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
+            if let Some(duration) = self.breathing_duration {
+                self.breathing_exercise = Some(BreathingExercise::new_from_duration(
+                    BreathingPattern::ExtendedExhale,
+                    duration,
+                ));
+            } else {
+                self.breathing_exercise =
+                    Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
+            }
         } else {
             self.breathing_exercise = None;
         }

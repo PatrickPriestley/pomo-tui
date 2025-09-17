@@ -247,17 +247,8 @@ fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
             // Render breathing info
             let instruction = exercise.get_instruction();
             let pattern = exercise.get_pattern_name();
-            let cycles = exercise.get_cycle_count();
+            let remaining_cycles = exercise.get_remaining_cycles();
             let remaining = exercise.get_remaining_in_phase();
-
-            // Calculate breathing session progress if applicable
-            let session_info = if let Some(duration) = app.breathing_duration() {
-                let elapsed = exercise.get_total_elapsed();
-                let remaining_session = duration.saturating_sub(elapsed);
-                format!(" | Session: {:.0}s left", remaining_session.as_secs_f64())
-            } else {
-                String::new()
-            };
 
             let content = vec![
                 Line::from(vec![Span::styled(
@@ -267,10 +258,8 @@ fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
                         .add_modifier(Modifier::BOLD),
                 )]),
                 Line::from(format!(
-                    "{} | Cycle {}{}",
-                    pattern,
-                    cycles + 1,
-                    session_info
+                    "{} | {} cycles remaining",
+                    pattern, remaining_cycles
                 )),
                 Line::from(format!("{:.0}s", remaining.as_secs_f64())),
             ];
