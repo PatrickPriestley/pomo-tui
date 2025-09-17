@@ -95,6 +95,25 @@ impl ToneGenerator {
                 sample_rate,
             )),
 
+            // Break End sounds (gentle and soothing)
+            (SoundType::BreakEnd, NotificationStyle::Simple) => Box::new(Self::sine_wave(
+                frequencies::E4,
+                Duration::from_millis(600),
+                sample_rate,
+            )),
+            (SoundType::BreakEnd, NotificationStyle::Musical) => {
+                Box::new(Self::create_chord(
+                    &[frequencies::C4, frequencies::E4],
+                    Duration::from_millis(800),
+                    sample_rate,
+                ))
+            }
+            (SoundType::BreakEnd, NotificationStyle::Gentle) => Box::new(Self::sine_wave(
+                frequencies::F4,
+                Duration::from_millis(700),
+                sample_rate,
+            )),
+
             // Test sound
             (SoundType::Test, _) => Box::new(Self::sine_wave(
                 frequencies::A4,

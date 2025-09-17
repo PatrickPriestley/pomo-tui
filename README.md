@@ -23,6 +23,19 @@ brew tap PatrickPriestley/tap
 brew install pomo-tui
 ```
 
+**Upgrading:**
+```bash
+brew update
+brew upgrade pomo-tui
+```
+
+> **Note:** If `brew upgrade` doesn't work, the tap may need to be updated. You can force an update with:
+> ```bash
+> brew untap PatrickPriestley/tap
+> brew tap PatrickPriestley/tap
+> brew upgrade pomo-tui
+> ```
+
 ### From Source
 
 ```bash

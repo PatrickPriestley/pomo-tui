@@ -1,6 +1,6 @@
 #[cfg(feature = "audio")]
 use crate::audio::{AudioManager, SoundType};
-use crate::core::{BreathingExercise, BreathingPattern, Timer};
+use crate::core::{BreakActivity, BreakAnimation, BreathingExercise, BreathingPattern, Timer};
 use crate::integrations::{DndState, MacOSDndController};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent},
@@ -25,6 +25,15 @@ pub struct App {
     dnd_auto_enabled: bool,
     dnd_state: DndState,
     status_message: Option<String>,
+    // Break activity system
+    break_activity: BreakActivity,
+    break_animation: Option<BreakAnimation>,
+    break_activity_selecting: bool,
+    selected_option: u8, // 1-4 for the current highlighted option
+    // Pause menu system
+    pause_menu_active: bool,
+    pause_menu_selection: u8, // 1=Resume, 2=Change Activity, 3=Reset
+    confirmation_dialog: Option<ConfirmationDialog>,
     #[cfg(feature = "audio")]
     audio_manager: AudioManager,
 }
@@ -33,6 +42,11 @@ pub struct App {
 pub enum AppMode {
     Pomodoro,
     Break,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConfirmationDialog {
+    ResetTimer,
 }
 
 impl App {
@@ -86,6 +100,15 @@ impl App {
             dnd_auto_enabled: true, // Default to auto-enable DND
             dnd_state,
             status_message,
+            // Break activity defaults
+            break_activity: BreakActivity::Breathing, // Default to breathing exercise
+            break_animation: None,
+            break_activity_selecting: false,
+            selected_option: 1, // Default to first breathing pattern
+            // Pause menu defaults
+            pause_menu_active: false,
+            pause_menu_selection: 1, // Default to Resume
+            confirmation_dialog: None,
             #[cfg(feature = "audio")]
             audio_manager,
         })
@@ -147,16 +170,64 @@ impl App {
                 self.should_quit = true;
             }
             KeyCode::Esc => {
-                // Clear status message or quit if no message
-                if self.status_message.is_some() {
+                if self.confirmation_dialog.is_some() {
+                    // Cancel confirmation dialog
+                    self.confirmation_dialog = None;
+                } else if self.pause_menu_active {
+                    // Resume from pause menu (like pressing Resume)
+                    self.pause_menu_active = false;
+                    self.timer.resume();
+                } else if self.status_message.is_some() {
+                    // Clear status message
                     self.status_message = None;
                 } else {
+                    // Quit application
                     self.restore_dnd_state();
                     self.should_quit = true;
                 }
             }
-            KeyCode::Char(' ') => self.toggle_timer(),
-            KeyCode::Char('r') => self.reset_timer(),
+            KeyCode::Char(' ') => {
+                if self.confirmation_dialog.is_some() {
+                    // Ignore space in confirmation dialog - only Y/N should work
+                    return;
+                } else if self.pause_menu_active {
+                    // Handle pause menu selection
+                    match self.pause_menu_selection {
+                        1 => {
+                            // Resume break
+                            self.pause_menu_active = false;
+                            self.timer.resume();
+                        }
+                        2 => {
+                            // Change break activity
+                            self.pause_menu_active = false;
+                            self.timer.reset();
+                            self.breathing_exercise = None;
+                            self.breathing_complete = false;
+                            self.break_animation = None;
+                            self.start_break_activity_selection();
+                        }
+                        3 => {
+                            // Reset timer (show confirmation)
+                            self.confirmation_dialog = Some(ConfirmationDialog::ResetTimer);
+                        }
+                        _ => {}
+                    }
+                } else if self.break_activity_selecting {
+                    // Confirm the selected break option
+                    self.select_break_option(self.selected_option);
+                } else {
+                    self.toggle_timer();
+                }
+            }
+            KeyCode::Char('r') => {
+                if self.confirmation_dialog.is_some() || self.pause_menu_active {
+                    // Ignore 'r' when in dialog modes
+                    return;
+                }
+                // Show confirmation dialog instead of immediate reset
+                self.confirmation_dialog = Some(ConfirmationDialog::ResetTimer);
+            }
             KeyCode::Char('s') => self.skip_to_break(),
             KeyCode::Char('b') => self.skip_break(),
             KeyCode::Char('h') => self.shorten_break(),
@@ -209,9 +280,56 @@ impl App {
                         Some("❌ Focus mode not supported on this platform".to_string());
                 }
             }
-            KeyCode::Char('1') => self.set_breathing_pattern(BreathingPattern::Simple),
-            KeyCode::Char('2') => self.set_breathing_pattern(BreathingPattern::Coherent),
-            KeyCode::Char('3') => self.set_breathing_pattern(BreathingPattern::ShortBox),
+            KeyCode::Char('1') => {
+                if self.pause_menu_active {
+                    self.pause_menu_selection = 1;
+                } else if self.break_activity_selecting {
+                    self.highlight_option(1);
+                } else {
+                    self.set_breathing_pattern(BreathingPattern::Simple);
+                }
+            }
+            KeyCode::Char('2') => {
+                if self.pause_menu_active {
+                    self.pause_menu_selection = 2;
+                } else if self.break_activity_selecting {
+                    self.highlight_option(2);
+                } else {
+                    self.set_breathing_pattern(BreathingPattern::Coherent);
+                }
+            }
+            KeyCode::Char('3') => {
+                if self.pause_menu_active {
+                    self.pause_menu_selection = 3;
+                } else if self.break_activity_selecting {
+                    self.highlight_option(3);
+                } else {
+                    self.set_breathing_pattern(BreathingPattern::ShortBox);
+                }
+            }
+            KeyCode::Char('4') => {
+                if self.break_activity_selecting {
+                    self.highlight_option(4);
+                }
+            }
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                if let Some(dialog) = self.confirmation_dialog {
+                    match dialog {
+                        ConfirmationDialog::ResetTimer => {
+                            // Confirmed - reset the timer
+                            self.confirmation_dialog = None;
+                            self.pause_menu_active = false;
+                            self.reset_timer();
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                if self.confirmation_dialog.is_some() {
+                    // Cancel confirmation dialog
+                    self.confirmation_dialog = None;
+                }
+            }
             #[cfg(feature = "audio")]
             KeyCode::Char('m') => self.toggle_audio_mute(),
             #[cfg(feature = "audio")]
@@ -238,9 +356,19 @@ impl App {
                 // Disable Focus mode when pausing to allow interruptions
                 if self.mode == AppMode::Pomodoro {
                     self.auto_disable_dnd();
+                } else if self.mode == AppMode::Break {
+                    // In break mode, show pause menu when paused
+                    self.pause_menu_active = true;
+                    self.pause_menu_selection = 1; // Default to Resume
                 }
             }
             crate::core::timer::TimerState::Paused => {
+                if self.mode == AppMode::Break && self.pause_menu_active {
+                    // If pause menu is active, this space press should be handled by menu logic
+                    // Don't resume immediately - let the menu handle it
+                    return;
+                }
+
                 self.timer.resume();
                 // Re-enable Focus mode when resuming Pomodoro
                 if self.mode == AppMode::Pomodoro {
@@ -256,6 +384,12 @@ impl App {
         if self.mode == AppMode::Break {
             self.breathing_exercise = None;
             self.breathing_complete = false;
+            // Reset break activity selection state
+            self.break_activity_selecting = false;
+            self.break_animation = None;
+            self.selected_option = 1;
+            // Re-enable break activity selection
+            self.start_break_activity_selection();
         }
     }
 
@@ -448,13 +582,28 @@ impl App {
                     self.breathing_complete = true;
                 }
             }
+
+            // Update break animation if active
+            if let Some(ref mut animation) = self.break_animation {
+                animation.update(Duration::from_millis(100));
+            }
         }
     }
 
     fn start_next_phase(&mut self) {
         match self.mode {
             AppMode::Pomodoro => self.start_break(),
-            AppMode::Break => self.start_pomodoro(),
+            AppMode::Break => {
+                // Play gentle break end sound
+                #[cfg(feature = "audio")]
+                {
+                    let _ = self.audio_manager.play_notification(SoundType::BreakEnd);
+                }
+
+                // Show ready message when break completes
+                self.status_message = Some("Break complete! Press Space when you're ready for your next pomodoro".to_string());
+                self.start_pomodoro();
+            }
         }
     }
 
@@ -471,20 +620,8 @@ impl App {
         self.break_was_shortened = false; // Reset shortened state for new break
         self.breathing_complete = false;
 
-        // Only start breathing if enabled
-        if self.breathing_enabled {
-            if let Some(duration) = self.breathing_duration {
-                self.breathing_exercise = Some(BreathingExercise::new_from_duration(
-                    BreathingPattern::ExtendedExhale,
-                    duration,
-                ));
-            } else {
-                self.breathing_exercise =
-                    Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
-            }
-        } else {
-            self.breathing_exercise = None;
-        }
+        // Start break activity selection
+        self.start_break_activity_selection();
 
         // Play special sound for long break
         #[cfg(feature = "audio")]
@@ -589,6 +726,19 @@ impl App {
     #[cfg(not(feature = "audio"))]
     pub fn audio_volume(&self) -> f32 {
         0.0
+    }
+
+    // Pause menu and confirmation dialog getters
+    pub fn pause_menu_active(&self) -> bool {
+        self.pause_menu_active
+    }
+
+    pub fn pause_menu_selection(&self) -> u8 {
+        self.pause_menu_selection
+    }
+
+    pub fn confirmation_dialog(&self) -> Option<ConfirmationDialog> {
+        self.confirmation_dialog
     }
 
     /// Toggle DND auto-enable setting
@@ -698,6 +848,78 @@ impl App {
             let _ = controller.restore_original_state();
             self.update_dnd_state();
         }
+    }
+
+    // Break activity getters
+    pub fn break_activity(&self) -> BreakActivity {
+        self.break_activity
+    }
+
+    pub fn break_animation(&self) -> Option<&BreakAnimation> {
+        self.break_animation.as_ref()
+    }
+
+    pub fn is_break_activity_selecting(&self) -> bool {
+        self.break_activity_selecting
+    }
+
+    pub fn selected_option(&self) -> u8 {
+        self.selected_option
+    }
+
+    // Break activity management
+    fn start_break_activity_selection(&mut self) {
+        if self.mode == AppMode::Break {
+            self.break_activity_selecting = true;
+            self.selected_option = 1; // Start with first breathing pattern selected
+        }
+    }
+
+    fn highlight_option(&mut self, option: u8) {
+        if self.break_activity_selecting && option >= 1 && option <= 4 {
+            self.selected_option = option;
+        }
+    }
+
+    fn select_break_option(&mut self, option: u8) {
+        self.break_activity_selecting = false;
+
+        // Handle options 1-3 as breathing patterns, 4 as stretch
+        match option {
+            1 => {
+                // Simple breathing pattern
+                self.break_activity = BreakActivity::Breathing;
+                self.set_breathing_pattern(BreathingPattern::Simple);
+                self.break_animation = None;
+            }
+            2 => {
+                // Coherent breathing pattern
+                self.break_activity = BreakActivity::Breathing;
+                self.set_breathing_pattern(BreathingPattern::Coherent);
+                self.break_animation = None;
+            }
+            3 => {
+                // Short Box breathing pattern
+                self.break_activity = BreakActivity::Breathing;
+                self.set_breathing_pattern(BreathingPattern::ShortBox);
+                self.break_animation = None;
+            }
+            4 => {
+                // Stretch break
+                self.break_activity = BreakActivity::Stretch;
+                self.break_animation = Some(BreakAnimation::new(BreakActivity::Stretch));
+                self.breathing_exercise = None;
+                self.breathing_complete = true;
+            }
+            _ => {
+                // Default to simple breathing
+                self.break_activity = BreakActivity::Breathing;
+                self.set_breathing_pattern(BreathingPattern::Simple);
+                self.break_animation = None;
+            }
+        }
+        // Start the timer immediately after selection
+        self.timer.start();
     }
 }
 

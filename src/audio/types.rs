@@ -10,6 +10,8 @@ pub enum SoundType {
     SessionComplete,
     /// Break completed (5min/15min → work)
     BreakComplete,
+    /// Break ending gently (softer than complete)
+    BreakEnd,
     /// Long break started (after 4 sessions)
     LongBreakStart,
     /// Work session started (optional)

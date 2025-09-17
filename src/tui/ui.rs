@@ -15,12 +15,22 @@ pub fn draw(frame: &mut Frame, app: &App) {
     let has_status = app.status_message().is_some();
 
     let chunks = if has_status {
-        // Check if we have setup instructions that need more space
+        // Calculate responsive status height based on terminal width and content
         let status_height = if let Some(msg) = app.status_message() {
+            let terminal_width = frame.size().width.saturating_sub(4); // Account for borders and margins
+            let available_width = terminal_width.max(20); // Minimum readable width
+
             if msg.contains("📋 Focus Mode Setup Instructions") {
-                20 // More space for setup instructions (increased from 12)
+                // Setup instructions need more space on narrow terminals
+                if terminal_width < 60 {
+                    25 // Extra space for narrow terminals
+                } else {
+                    20 // Normal space for wider terminals
+                }
             } else {
-                4 // Normal space for other status messages
+                // Calculate height needed for normal messages based on content length
+                let estimated_lines = (msg.len() as u16 / available_width) + 2; // +2 for dismiss text and padding
+                estimated_lines.min(8).max(4) // Between 4-8 lines
             }
         } else {
             4
@@ -33,7 +43,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
                 Constraint::Length(3),
                 Constraint::Min(8),
                 Constraint::Length(5),
-                Constraint::Length(status_height), // Dynamic status message area
+                Constraint::Length(status_height), // Responsive status message area
             ])
             .split(frame.size())
     } else {
@@ -101,7 +111,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
                 .add_modifier(Modifier::BOLD),
         )
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL));
+        .block(Block::default().borders(Borders::ALL))
+        .wrap(ratatui::widgets::Wrap { trim: true });
 
     frame.render_widget(title_widget, chunks[0]);
 
@@ -212,7 +223,8 @@ fn render_timer(frame: &mut Frame, app: &App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .title("Time Remaining"),
-        );
+        )
+        .wrap(ratatui::widgets::Wrap { trim: true });
 
     frame.render_widget(timer_widget, area);
 }
@@ -229,176 +241,48 @@ fn render_progress(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
-    // Only show breathing exercise when timer is running
+    // Handle confirmation dialog first (highest priority)
+    if let Some(dialog) = app.confirmation_dialog() {
+        render_confirmation_dialog(frame, dialog, area);
+        return;
+    }
+
+    // Handle pause menu
+    if app.pause_menu_active() {
+        render_pause_menu(frame, app, area);
+        return;
+    }
+
+    // Handle break activity selection
+    if app.is_break_activity_selecting() {
+        render_break_activity_selection(frame, app, area);
+        return;
+    }
+
+    // Handle specific break activities
     if app.timer().state() == crate::core::timer::TimerState::Running {
-        if let Some(exercise) = app.breathing_exercise() {
-            // Split the area for circle and text
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Min(10),   // Circle area
-                    Constraint::Length(4), // Info area
-                ])
-                .split(area);
-
-            // Render the breathing circle
-            render_breathing_circle(frame, exercise, chunks[0]);
-
-            // Render breathing info
-            let instruction = exercise.get_instruction();
-            let pattern = exercise.get_pattern_name();
-            let remaining_cycles = exercise.get_remaining_cycles();
-            let remaining = exercise.get_remaining_in_phase();
-
-            let content = vec![
-                Line::from(vec![Span::styled(
-                    instruction,
-                    Style::default()
-                        .fg(get_phase_color(exercise.get_current_phase()))
-                        .add_modifier(Modifier::BOLD),
-                )]),
-                Line::from(format!(
-                    "{} | {} cycles remaining",
-                    pattern, remaining_cycles
-                )),
-                Line::from(format!("{:.0}s", remaining.as_secs_f64())),
-            ];
-
-            let info_widget = Paragraph::new(content)
-                .alignment(Alignment::Center)
-                .block(Block::default().borders(Borders::TOP));
-
-            frame.render_widget(info_widget, chunks[1]);
-        } else if app.breathing_complete() {
-            // Show rest mode
-            let break_widget = Paragraph::new(vec![
-                Line::from("☕ Rest and Stretch"),
-                Line::from(""),
-                Line::from("Take this time to:"),
-                Line::from("• Stand up and stretch"),
-                Line::from("• Look away from the screen"),
-                Line::from("• Hydrate"),
-                Line::from(""),
-                Line::from("Press 'T' to toggle breathing exercises"),
-            ])
-            .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::ALL).title("Break Time"));
-
-            frame.render_widget(break_widget, area);
-        } else {
-            let break_widget = Paragraph::new("Enjoy your break!")
-                .alignment(Alignment::Center)
-                .block(Block::default().borders(Borders::ALL).title("Break Time"));
-
-            frame.render_widget(break_widget, area);
+        match app.break_activity() {
+            crate::core::BreakActivity::Breathing => {
+                if let Some(exercise) = app.breathing_exercise() {
+                    render_breathing_exercise(frame, exercise, area);
+                } else {
+                    render_break_rest(frame, area);
+                }
+            }
+            crate::core::BreakActivity::Stretch => {
+                if let Some(animation) = app.break_animation() {
+                    render_stretch_animation(frame, animation, area);
+                } else {
+                    render_break_rest(frame, area);
+                }
+            }
         }
-    } else if app.timer().state() == crate::core::timer::TimerState::Idle {
-        // Show instructions when break timer is idle
-        let selected_pattern = app
-            .breathing_exercise()
-            .map(|ex| ex.get_pattern())
-            .unwrap_or(crate::core::BreathingPattern::Simple);
-
-        // Create pattern options with visual indicators for selection
-        let simple_line = if selected_pattern == crate::core::BreathingPattern::Simple {
-            Line::from(vec![
-                Span::styled(
-                    "✓ ",
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw("1: "),
-                Span::styled(
-                    "Simple (4-4)",
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ])
-        } else {
-            Line::from(vec![
-                Span::raw("  1: "),
-                Span::styled("Simple (4-4)", Style::default().fg(Color::Cyan)),
-            ])
-        };
-
-        let coherent_line = if selected_pattern == crate::core::BreathingPattern::Coherent {
-            Line::from(vec![
-                Span::styled(
-                    "✓ ",
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw("2: "),
-                Span::styled(
-                    "Coherent (5-5)",
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ])
-        } else {
-            Line::from(vec![
-                Span::raw("  2: "),
-                Span::styled("Coherent (5-5)", Style::default().fg(Color::Cyan)),
-            ])
-        };
-
-        let short_box_line = if selected_pattern == crate::core::BreathingPattern::ShortBox {
-            Line::from(vec![
-                Span::styled(
-                    "✓ ",
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw("3: "),
-                Span::styled(
-                    "Short Box (3-3-3-3)",
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ])
-        } else {
-            Line::from(vec![
-                Span::raw("  3: "),
-                Span::styled("Short Box (3-3-3-3)", Style::default().fg(Color::Cyan)),
-            ])
-        };
-
-        let content = vec![
-            Line::from(""),
-            Line::from("Choose a breathing pattern:"),
-            Line::from(""),
-            simple_line,
-            coherent_line,
-            short_box_line,
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                "Press Space to start break",
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-            )]),
-        ];
-
-        let break_widget = Paragraph::new(content)
-            .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::ALL).title("Break Ready"));
-
-        frame.render_widget(break_widget, area);
     } else {
-        // Paused or completed state
-        let break_widget = Paragraph::new("Break time")
-            .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::ALL).title("Break"));
-
-        frame.render_widget(break_widget, area);
+        // Show selection screen when break timer is idle
+        render_break_activity_selection(frame, app, area);
     }
 }
+
 
 fn render_status(frame: &mut Frame, app: &App, area: Rect) {
     let state = match (app.mode(), app.timer().state()) {
@@ -415,7 +299,7 @@ fn render_status(frame: &mut Frame, app: &App, area: Rect) {
             "Pomodoro complete! Press Space to prepare break"
         }
         (crate::tui::app::AppMode::Break, crate::core::timer::TimerState::Idle) => {
-            "Break ready - Choose pattern (1-3) and press Space"
+            "Break ready - Choose activity (1-4) and press Space"
         }
         (crate::tui::app::AppMode::Break, crate::core::timer::TimerState::Running) => {
             "Break in progress - Relax and breathe"
@@ -438,7 +322,8 @@ fn render_status(frame: &mut Frame, app: &App, area: Rect) {
     let status_widget = Paragraph::new(state)
         .style(Style::default().fg(color).add_modifier(Modifier::BOLD))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title("Status"));
+        .block(Block::default().borders(Borders::ALL).title("Status"))
+        .wrap(ratatui::widgets::Wrap { trim: true });
 
     frame.render_widget(status_widget, area);
 }
@@ -449,7 +334,8 @@ fn render_controls(frame: &mut Frame, app: &App, area: Rect) {
 
     let controls_widget = Paragraph::new(controls)
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title("Controls"));
+        .block(Block::default().borders(Borders::ALL).title("Controls"))
+        .wrap(ratatui::widgets::Wrap { trim: true });
 
     frame.render_widget(controls_widget, area);
 }
@@ -828,6 +714,236 @@ fn get_narrow_controls(app: &App) -> Vec<Line<'static>> {
             ]),
         ]
     }
+}
+
+fn render_break_activity_selection(frame: &mut Frame, app: &App, area: Rect) {
+    let selected = app.selected_option();
+
+    // Create pattern options with visual indicators for selection
+    let simple_line = if selected == 1 {
+        Line::from(vec![
+            Span::styled(
+                "✓ ",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("1. Simple (4-4 breathing)"),
+        ])
+    } else {
+        Line::from("  1. Simple (4-4 breathing)")
+    };
+
+    let coherent_line = if selected == 2 {
+        Line::from(vec![
+            Span::styled(
+                "✓ ",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("2. Coherent (5-5 gentle breathing)"),
+        ])
+    } else {
+        Line::from("  2. Coherent (5-5 gentle breathing)")
+    };
+
+    let short_box_line = if selected == 3 {
+        Line::from(vec![
+            Span::styled(
+                "✓ ",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("3. Short Box (3-3-3-3 breathing)"),
+        ])
+    } else {
+        Line::from("  3. Short Box (3-3-3-3 breathing)")
+    };
+
+    let stretch_line = if selected == 4 {
+        Line::from(vec![
+            Span::styled(
+                "✓ ",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("4. Stretch Break"),
+        ])
+    } else {
+        Line::from("  4. Stretch Break")
+    };
+
+    let content = vec![
+        Line::from(""),
+        Line::from("Choose a breathing pattern or activity:"),
+        Line::from(""),
+        simple_line,
+        coherent_line,
+        short_box_line,
+        stretch_line,
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Press 1-4 to highlight, then Space to start break",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )]),
+    ];
+
+    let break_widget = Paragraph::new(content)
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL).title("Time for a Break!"))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    frame.render_widget(break_widget, area);
+}
+
+fn render_breathing_exercise(frame: &mut Frame, exercise: &crate::core::BreathingExercise, area: Rect) {
+    // Split the area for circle and text
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(10),   // Circle area
+            Constraint::Length(4), // Info area
+        ])
+        .split(area);
+
+    // Render the breathing circle
+    render_breathing_circle(frame, exercise, chunks[0]);
+
+    // Render breathing info
+    let instruction = exercise.get_instruction();
+    let pattern = exercise.get_pattern_name();
+    let remaining_cycles = exercise.get_remaining_cycles();
+    let remaining = exercise.get_remaining_in_phase();
+
+    let content = vec![
+        Line::from(vec![Span::styled(
+            instruction,
+            Style::default()
+                .fg(get_phase_color(exercise.get_current_phase()))
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(format!(
+            "{} | {} cycles remaining",
+            pattern, remaining_cycles
+        )),
+        Line::from(format!("{:.0}s", remaining.as_secs_f64())),
+    ];
+
+    let info_widget = Paragraph::new(content)
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::TOP))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    frame.render_widget(info_widget, chunks[1]);
+}
+
+
+fn render_stretch_animation(frame: &mut Frame, animation: &crate::core::BreakAnimation, area: Rect) {
+    let elapsed = animation.total_elapsed().as_secs();
+
+    let stretch_widget = Paragraph::new(vec![
+        Line::from("🤸 Stretch Break"),
+        Line::from(""),
+        Line::from("Take this time to:"),
+        Line::from("• Roll your shoulders gently"),
+        Line::from("• Stretch your neck side to side"),
+        Line::from("• Take deep breaths"),
+        Line::from("• Reach your arms overhead"),
+        Line::from("• Relax your eyes by looking away"),
+        Line::from(""),
+        Line::from(format!("Elapsed time: {}s", elapsed)),
+        Line::from(""),
+        Line::from("Move gently and listen to your body..."),
+    ])
+    .alignment(Alignment::Center)
+    .block(Block::default().borders(Borders::ALL).title("Stretch Break"))
+    .wrap(ratatui::widgets::Wrap { trim: true });
+
+    frame.render_widget(stretch_widget, area);
+}
+
+fn render_break_rest(frame: &mut Frame, area: Rect) {
+    let break_widget = Paragraph::new(vec![
+        Line::from("😌 Rest Break"),
+        Line::from(""),
+        Line::from("Take this time to:"),
+        Line::from("• Close your eyes for a moment"),
+        Line::from("• Take some deep breaths"),
+        Line::from("• Look away from the screen"),
+        Line::from("• Hydrate"),
+        Line::from(""),
+        Line::from("Just relax and let your mind wander..."),
+    ])
+    .alignment(Alignment::Center)
+    .block(Block::default().borders(Borders::ALL).title("Break Time"))
+    .wrap(ratatui::widgets::Wrap { trim: true });
+
+    frame.render_widget(break_widget, area);
+}
+
+fn render_pause_menu(frame: &mut Frame, app: &App, area: Rect) {
+    let pause_menu_widget = Paragraph::new(vec![
+        Line::from("⏸️  Break Paused"),
+        Line::from(""),
+        Line::from(vec![
+            if app.pause_menu_selection() == 1 {
+                Span::styled("▶ 1. Resume Break", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+            } else {
+                Span::raw("  1. Resume Break")
+            }
+        ]),
+        Line::from(vec![
+            if app.pause_menu_selection() == 2 {
+                Span::styled("▶ 2. Change Break Activity", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+            } else {
+                Span::raw("  2. Change Break Activity")
+            }
+        ]),
+        Line::from(vec![
+            if app.pause_menu_selection() == 3 {
+                Span::styled("▶ 3. Reset Timer", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+            } else {
+                Span::raw("  3. Reset Timer")
+            }
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Use 1-3 to select, Space to confirm, Esc to resume",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::ITALIC),
+        )]),
+    ])
+    .alignment(Alignment::Center)
+    .block(Block::default().borders(Borders::ALL).title("Pause Menu"))
+    .wrap(ratatui::widgets::Wrap { trim: true });
+
+    frame.render_widget(pause_menu_widget, area);
+}
+
+fn render_confirmation_dialog(frame: &mut Frame, dialog: crate::tui::app::ConfirmationDialog, area: Rect) {
+    let message = match dialog {
+        crate::tui::app::ConfirmationDialog::ResetTimer => "Are you sure you want to reset the timer?",
+    };
+
+    let confirmation_widget = Paragraph::new(vec![
+        Line::from("⚠️  Confirmation Required"),
+        Line::from(""),
+        Line::from(message),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Press Y to confirm, N to cancel",
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        )]),
+    ])
+    .alignment(Alignment::Center)
+    .block(Block::default().borders(Borders::ALL).title("Confirm Action"))
+    .wrap(ratatui::widgets::Wrap { trim: true });
+
+    frame.render_widget(confirmation_widget, area);
 }
 
 fn render_breathing_circle(
