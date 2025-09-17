@@ -148,33 +148,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  publish-crates:
-    name: Publish to crates.io
-    runs-on: ubuntu-latest
-    if: ${{ !contains(github.ref, '-') }} # Only publish stable releases (skip if no token)
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config
-
-      - name: Login to crates.io
-        run: |
-          if [ -z "${{ secrets.CRATES_IO_TOKEN }}" ]; then
-            echo "CRATES_IO_TOKEN not configured, skipping crates.io publish"
-            exit 0
-          fi
-          cargo login ${{ secrets.CRATES_IO_TOKEN }}
-
-      - name: Publish to crates.io
-        run: cargo publish --verbose
 
   update-homebrew:
     name: Update Homebrew Formula
