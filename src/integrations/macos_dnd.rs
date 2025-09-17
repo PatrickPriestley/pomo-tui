@@ -477,7 +477,7 @@ Note: The shortcut names must match exactly as shown above.
 Alternative: Customize names with environment variables:
   FOCUS_ENABLE_SHORTCUT="Your Enable Name"
   FOCUS_DISABLE_SHORTCUT="Your Disable Name""#,
-            self.enable_shortcut_name, 
+            self.enable_shortcut_name,
             self.enable_shortcut_name,
             self.disable_shortcut_name,
             self.disable_shortcut_name

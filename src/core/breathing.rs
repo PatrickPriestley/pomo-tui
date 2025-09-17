@@ -91,7 +91,7 @@ impl BreathingExercise {
                 BreathPhase::Inhale => {
                     self.post_exhale_transition = false;
                     BreathPhase::Transition
-                },
+                }
                 BreathPhase::Transition => {
                     if self.post_exhale_transition {
                         self.cycle_count += 1;
@@ -100,11 +100,11 @@ impl BreathingExercise {
                     } else {
                         BreathPhase::Exhale
                     }
-                },
+                }
                 BreathPhase::Exhale => {
                     self.post_exhale_transition = true;
                     BreathPhase::Transition
-                },
+                }
                 BreathPhase::Hold | BreathPhase::Rest => {
                     self.cycle_count += 1;
                     BreathPhase::Inhale
@@ -114,7 +114,7 @@ impl BreathingExercise {
                 BreathPhase::Inhale => {
                     self.post_exhale_transition = false;
                     BreathPhase::Transition
-                },
+                }
                 BreathPhase::Transition => {
                     if self.post_exhale_transition {
                         self.cycle_count += 1;
@@ -123,11 +123,11 @@ impl BreathingExercise {
                     } else {
                         BreathPhase::Exhale
                     }
-                },
+                }
                 BreathPhase::Exhale => {
                     self.post_exhale_transition = true;
                     BreathPhase::Transition
-                },
+                }
                 BreathPhase::Hold | BreathPhase::Rest => {
                     self.cycle_count += 1;
                     BreathPhase::Inhale
@@ -148,7 +148,7 @@ impl BreathingExercise {
                 BreathPhase::Inhale => {
                     self.post_exhale_transition = false;
                     BreathPhase::Transition
-                },
+                }
                 BreathPhase::Transition => {
                     if self.post_exhale_transition {
                         self.cycle_count += 1;
@@ -157,11 +157,11 @@ impl BreathingExercise {
                     } else {
                         BreathPhase::Exhale
                     }
-                },
+                }
                 BreathPhase::Exhale => {
                     self.post_exhale_transition = true;
                     BreathPhase::Transition
-                },
+                }
                 BreathPhase::Hold | BreathPhase::Rest => {
                     self.cycle_count += 1;
                     BreathPhase::Inhale

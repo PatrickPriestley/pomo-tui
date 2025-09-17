@@ -19,20 +19,15 @@ pub enum SoundType {
 }
 
 /// Audio notification styles
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum NotificationStyle {
     /// Simple single tones
     Simple,
     /// Musical chimes and chords
+    #[default]
     Musical,
     /// Soft, ADHD-friendly tones
     Gentle,
-}
-
-impl Default for NotificationStyle {
-    fn default() -> Self {
-        NotificationStyle::Musical
-    }
 }
 
 /// Audio-related errors
@@ -40,16 +35,16 @@ impl Default for NotificationStyle {
 pub enum AudioError {
     #[error("Audio device not available")]
     DeviceUnavailable,
-    
+
     #[error("Audio initialization failed: {0}")]
     InitializationFailed(String),
-    
+
     #[error("Playback failed: {0}")]
     PlaybackFailed(String),
-    
+
     #[error("Configuration error: {0}")]
     ConfigError(String),
-    
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 }
@@ -65,7 +60,7 @@ pub mod frequencies {
     pub const A4: f32 = 440.00;
     pub const B4: f32 = 493.88;
     pub const C5: f32 = 523.25;
-    
+
     /// Common tone frequencies (reserved for future use)
     #[allow(dead_code)]
     pub const NOTIFICATION: f32 = A4;

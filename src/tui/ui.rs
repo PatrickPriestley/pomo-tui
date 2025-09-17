@@ -4,7 +4,10 @@ use crate::tui::app::{App, AppMode};
 use ratatui::{
     prelude::*,
     symbols,
-    widgets::{canvas::{Canvas, Circle, Context}, Block, Borders, Gauge, Paragraph},
+    widgets::{
+        canvas::{Canvas, Circle, Context},
+        Block, Borders, Gauge, Paragraph,
+    },
 };
 
 pub fn draw(frame: &mut Frame, app: &App) {
@@ -233,7 +236,7 @@ fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Min(10),  // Circle area
+                    Constraint::Min(10),   // Circle area
                     Constraint::Length(4), // Info area
                 ])
                 .split(area);
@@ -257,24 +260,24 @@ fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
             };
 
             let content = vec![
-                Line::from(vec![
-                    Span::styled(
-                        instruction,
-                        Style::default()
-                            .fg(get_phase_color(exercise.get_current_phase()))
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-                Line::from(format!("{} | Cycle {}{}", pattern, cycles + 1, session_info)),
+                Line::from(vec![Span::styled(
+                    instruction,
+                    Style::default()
+                        .fg(get_phase_color(exercise.get_current_phase()))
+                        .add_modifier(Modifier::BOLD),
+                )]),
+                Line::from(format!(
+                    "{} | Cycle {}{}",
+                    pattern,
+                    cycles + 1,
+                    session_info
+                )),
                 Line::from(format!("{:.0}s", remaining.as_secs_f64())),
             ];
 
             let info_widget = Paragraph::new(content)
                 .alignment(Alignment::Center)
-                .block(
-                    Block::default()
-                        .borders(Borders::TOP)
-                );
+                .block(Block::default().borders(Borders::TOP));
 
             frame.render_widget(info_widget, chunks[1]);
         } else if app.breathing_complete() {
@@ -354,29 +357,28 @@ fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
             ])
         };
 
-        let short_box_line =
-            if selected_pattern == crate::core::BreathingPattern::ShortBox {
-                Line::from(vec![
-                    Span::styled(
-                        "✓ ",
-                        Style::default()
-                            .fg(Color::Green)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::raw("3: "),
-                    Span::styled(
-                        "Short Box (3-3-3-3)",
-                        Style::default()
-                            .fg(Color::Green)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ])
-            } else {
-                Line::from(vec![
-                    Span::raw("  3: "),
-                    Span::styled("Short Box (3-3-3-3)", Style::default().fg(Color::Cyan)),
-                ])
-            };
+        let short_box_line = if selected_pattern == crate::core::BreathingPattern::ShortBox {
+            Line::from(vec![
+                Span::styled(
+                    "✓ ",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("3: "),
+                Span::styled(
+                    "Short Box (3-3-3-3)",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ])
+        } else {
+            Line::from(vec![
+                Span::raw("  3: "),
+                Span::styled("Short Box (3-3-3-3)", Style::default().fg(Color::Cyan)),
+            ])
+        };
 
         let content = vec![
             Line::from(""),
@@ -726,7 +728,7 @@ fn get_medium_controls(app: &App) -> Vec<Line<'static>> {
         ];
 
         let mut second_line = vec![];
-        
+
         // Add audio controls if feature is enabled
         if cfg!(feature = "audio") {
             second_line.extend(vec![
@@ -738,7 +740,7 @@ fn get_medium_controls(app: &App) -> Vec<Line<'static>> {
                 Span::raw(" | "),
             ]);
         }
-        
+
         second_line.extend(vec![
             Span::raw("Q/Esc: "),
             Span::styled("Quit", Style::default().fg(Color::Red)),
@@ -839,8 +841,11 @@ fn get_narrow_controls(app: &App) -> Vec<Line<'static>> {
     }
 }
 
-
-fn render_breathing_circle(frame: &mut Frame, exercise: &crate::core::BreathingExercise, area: Rect) {
+fn render_breathing_circle(
+    frame: &mut Frame,
+    exercise: &crate::core::BreathingExercise,
+    area: Rect,
+) {
     let progress = exercise.get_phase_progress();
     let phase = exercise.get_current_phase();
 
@@ -855,19 +860,19 @@ fn render_breathing_circle(frame: &mut Frame, exercise: &crate::core::BreathingE
         BreathPhase::Inhale => {
             // Expand from base to max with easing
             base_radius + (eased_progress * max_expansion)
-        },
+        }
         BreathPhase::Hold => {
             // Stay at max size
             base_radius + max_expansion
-        },
+        }
         BreathPhase::Exhale => {
             // Contract from max to base with easing
             base_radius + max_expansion * (1.0 - eased_progress)
-        },
+        }
         BreathPhase::Rest => {
             // Stay at base size
             base_radius
-        },
+        }
         BreathPhase::Transition => {
             // Hold at appropriate size - don't make it larger than breathing phases
             if exercise.is_post_exhale_transition() {
@@ -877,7 +882,7 @@ fn render_breathing_circle(frame: &mut Frame, exercise: &crate::core::BreathingE
                 // After inhale, hold at expanded size
                 base_radius + max_expansion
             }
-        },
+        }
     };
 
     let color = get_phase_color(phase);
@@ -949,7 +954,7 @@ mod tests {
         if cfg!(feature = "audio") {
             // Wide terminal should have two lines for Pomodoro mode (main controls + audio controls)
             assert_eq!(controls.len(), 2);
-            
+
             // Should contain audio controls in second line
             let audio_text = format!("{:?}", controls[1]);
             assert!(audio_text.contains("Mute"));

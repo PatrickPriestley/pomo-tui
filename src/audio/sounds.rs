@@ -22,9 +22,11 @@ impl ToneGenerator {
     ) -> Box<dyn Source<Item = f32> + Send> {
         match (sound_type, style) {
             // Session Complete sounds
-            (SoundType::SessionComplete, NotificationStyle::Simple) => {
-                Box::new(Self::sine_wave(frequencies::A4, Duration::from_millis(500), sample_rate))
-            }
+            (SoundType::SessionComplete, NotificationStyle::Simple) => Box::new(Self::sine_wave(
+                frequencies::A4,
+                Duration::from_millis(500),
+                sample_rate,
+            )),
             (SoundType::SessionComplete, NotificationStyle::Musical) => {
                 Box::new(Self::create_chord(
                     &[frequencies::C4, frequencies::E4],
@@ -32,14 +34,18 @@ impl ToneGenerator {
                     sample_rate,
                 ))
             }
-            (SoundType::SessionComplete, NotificationStyle::Gentle) => {
-                Box::new(Self::sine_wave(frequencies::G4, Duration::from_millis(600), sample_rate))
-            }
+            (SoundType::SessionComplete, NotificationStyle::Gentle) => Box::new(Self::sine_wave(
+                frequencies::G4,
+                Duration::from_millis(600),
+                sample_rate,
+            )),
 
             // Break Complete sounds
-            (SoundType::BreakComplete, NotificationStyle::Simple) => {
-                Box::new(Self::sine_wave(frequencies::C5, Duration::from_millis(400), sample_rate))
-            }
+            (SoundType::BreakComplete, NotificationStyle::Simple) => Box::new(Self::sine_wave(
+                frequencies::C5,
+                Duration::from_millis(400),
+                sample_rate,
+            )),
             (SoundType::BreakComplete, NotificationStyle::Musical) => {
                 Box::new(Self::create_sequence(
                     &[frequencies::C4, frequencies::G4],
@@ -47,14 +53,18 @@ impl ToneGenerator {
                     sample_rate,
                 ))
             }
-            (SoundType::BreakComplete, NotificationStyle::Gentle) => {
-                Box::new(Self::sine_wave(frequencies::F4, Duration::from_millis(400), sample_rate))
-            }
+            (SoundType::BreakComplete, NotificationStyle::Gentle) => Box::new(Self::sine_wave(
+                frequencies::F4,
+                Duration::from_millis(400),
+                sample_rate,
+            )),
 
             // Long Break Start sounds
-            (SoundType::LongBreakStart, NotificationStyle::Simple) => {
-                Box::new(Self::sine_wave(frequencies::E4, Duration::from_millis(700), sample_rate))
-            }
+            (SoundType::LongBreakStart, NotificationStyle::Simple) => Box::new(Self::sine_wave(
+                frequencies::E4,
+                Duration::from_millis(700),
+                sample_rate,
+            )),
             (SoundType::LongBreakStart, NotificationStyle::Musical) => {
                 Box::new(Self::create_chord(
                     &[frequencies::C4, frequencies::E4, frequencies::G4],
@@ -62,25 +72,35 @@ impl ToneGenerator {
                     sample_rate,
                 ))
             }
-            (SoundType::LongBreakStart, NotificationStyle::Gentle) => {
-                Box::new(Self::sine_wave(frequencies::D4, Duration::from_millis(800), sample_rate))
-            }
+            (SoundType::LongBreakStart, NotificationStyle::Gentle) => Box::new(Self::sine_wave(
+                frequencies::D4,
+                Duration::from_millis(800),
+                sample_rate,
+            )),
 
             // Session Start sounds
-            (SoundType::SessionStart, NotificationStyle::Simple) => {
-                Box::new(Self::sine_wave(frequencies::B4, Duration::from_millis(200), sample_rate))
-            }
-            (SoundType::SessionStart, NotificationStyle::Musical) => {
-                Box::new(Self::sine_wave(frequencies::C5, Duration::from_millis(250), sample_rate))
-            }
-            (SoundType::SessionStart, NotificationStyle::Gentle) => {
-                Box::new(Self::sine_wave(frequencies::A4, Duration::from_millis(300), sample_rate))
-            }
+            (SoundType::SessionStart, NotificationStyle::Simple) => Box::new(Self::sine_wave(
+                frequencies::B4,
+                Duration::from_millis(200),
+                sample_rate,
+            )),
+            (SoundType::SessionStart, NotificationStyle::Musical) => Box::new(Self::sine_wave(
+                frequencies::C5,
+                Duration::from_millis(250),
+                sample_rate,
+            )),
+            (SoundType::SessionStart, NotificationStyle::Gentle) => Box::new(Self::sine_wave(
+                frequencies::A4,
+                Duration::from_millis(300),
+                sample_rate,
+            )),
 
             // Test sound
-            (SoundType::Test, _) => {
-                Box::new(Self::sine_wave(frequencies::A4, Duration::from_millis(500), sample_rate))
-            }
+            (SoundType::Test, _) => Box::new(Self::sine_wave(
+                frequencies::A4,
+                Duration::from_millis(500),
+                sample_rate,
+            )),
         }
     }
 
@@ -229,10 +249,7 @@ impl Source for ChordSource {
     }
 
     fn total_duration(&self) -> Option<Duration> {
-        self.waves
-            .iter()
-            .filter_map(|w| w.total_duration())
-            .max()
+        self.waves.iter().filter_map(|w| w.total_duration()).max()
     }
 }
 

@@ -1,5 +1,5 @@
 //! Audio notification system for pomo-tui
-//! 
+//!
 //! Provides audio feedback for session transitions and timer events.
 //! Uses rodio for cross-platform audio playback with generated tones.
 
@@ -42,7 +42,10 @@ impl AudioManager {
             return Ok(());
         }
 
-        let mut player_guard = self.player.lock().map_err(|_| AudioError::PlaybackFailed("Mutex lock failed".to_string()))?;
+        let mut player_guard = self
+            .player
+            .lock()
+            .map_err(|_| AudioError::PlaybackFailed("Mutex lock failed".to_string()))?;
         if let Some(ref mut player) = *player_guard {
             player.play_sound(sound_type, self.config.volume)?;
         }

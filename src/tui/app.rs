@@ -62,7 +62,8 @@ impl App {
                 Err(_) => {
                     // If shortcuts check fails (permissions, device not configured, etc.)
                     // just show a warning and continue - don't crash the app
-                    status_message = Some("⚠️ Focus mode unavailable - press 'F' for help".to_string());
+                    status_message =
+                        Some("⚠️ Focus mode unavailable - press 'F' for help".to_string());
                 }
             }
         }
@@ -319,7 +320,8 @@ impl App {
             self.breathing_exercise = None;
             self.breathing_complete = true;
         } else if self.mode == AppMode::Break && !self.breathing_complete {
-            self.breathing_exercise = Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
+            self.breathing_exercise =
+                Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
         }
     }
 
@@ -363,8 +365,15 @@ impl App {
         match self.audio_manager.play_test_sound() {
             Ok(()) => {
                 let volume = (self.audio_manager.volume() * 100.0).round() as u8;
-                let mute_status = if self.audio_manager.is_muted() { " (muted)" } else { "" };
-                self.status_message = Some(format!("🎵 Test sound played - Volume: {}{}", volume, mute_status));
+                let mute_status = if self.audio_manager.is_muted() {
+                    " (muted)"
+                } else {
+                    ""
+                };
+                self.status_message = Some(format!(
+                    "🎵 Test sound played - Volume: {}{}",
+                    volume, mute_status
+                ));
             }
             Err(_) => {
                 self.status_message = Some("❌ Audio not available".to_string());
@@ -376,22 +385,26 @@ impl App {
         // Check if timer expired
         if self.timer.is_expired() {
             self.timer.stop();
-            
+
             // Play appropriate notification sound
             #[cfg(feature = "audio")]
             {
                 match self.mode {
                     AppMode::Pomodoro => {
                         // Session completed - time for a break
-                        let _ = self.audio_manager.play_notification(SoundType::SessionComplete);
+                        let _ = self
+                            .audio_manager
+                            .play_notification(SoundType::SessionComplete);
                     }
                     AppMode::Break => {
                         // Break completed - time to work
-                        let _ = self.audio_manager.play_notification(SoundType::BreakComplete);
+                        let _ = self
+                            .audio_manager
+                            .play_notification(SoundType::BreakComplete);
                     }
                 }
             }
-            
+
             // Update session count
             if self.mode == AppMode::Pomodoro {
                 self.session_count += 1;
@@ -436,17 +449,20 @@ impl App {
 
         // Only start breathing if enabled
         if self.breathing_enabled {
-            self.breathing_exercise = Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
+            self.breathing_exercise =
+                Some(BreathingExercise::new(BreathingPattern::ExtendedExhale));
         } else {
             self.breathing_exercise = None;
         }
-        
+
         // Play special sound for long break
         #[cfg(feature = "audio")]
         if is_long_break {
-            let _ = self.audio_manager.play_notification(SoundType::LongBreakStart);
+            let _ = self
+                .audio_manager
+                .play_notification(SoundType::LongBreakStart);
         }
-        
+
         // Disable DND when starting a break
         self.auto_disable_dnd();
         // Don't auto-start - wait for user to press space

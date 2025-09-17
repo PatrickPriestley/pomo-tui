@@ -33,36 +33,37 @@ impl AudioConfig {
     /// Load configuration from disk, or return default if not found
     pub fn load() -> Result<Self, AudioError> {
         let config_path = Self::config_path()?;
-        
+
         if !config_path.exists() {
             return Ok(Self::default());
         }
 
         let content = fs::read_to_string(&config_path)
             .map_err(|e| AudioError::ConfigError(format!("Failed to read config: {}", e)))?;
-            
+
         let config: Self = serde_json::from_str(&content)
             .map_err(|e| AudioError::ConfigError(format!("Failed to parse config: {}", e)))?;
-            
+
         Ok(config)
     }
 
     /// Save configuration to disk
     pub fn save(&self) -> Result<(), AudioError> {
         let config_path = Self::config_path()?;
-        
+
         // Create parent directory if it doesn't exist
         if let Some(parent) = config_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| AudioError::ConfigError(format!("Failed to create config dir: {}", e)))?;
+            fs::create_dir_all(parent).map_err(|e| {
+                AudioError::ConfigError(format!("Failed to create config dir: {}", e))
+            })?;
         }
 
         let content = serde_json::to_string_pretty(self)
             .map_err(|e| AudioError::ConfigError(format!("Failed to serialize config: {}", e)))?;
-            
+
         fs::write(&config_path, content)
             .map_err(|e| AudioError::ConfigError(format!("Failed to write config: {}", e)))?;
-            
+
         Ok(())
     }
 
@@ -70,10 +71,10 @@ impl AudioConfig {
     fn config_path() -> Result<PathBuf, AudioError> {
         let mut path = dirs::config_dir()
             .ok_or_else(|| AudioError::ConfigError("No config directory found".to_string()))?;
-        
+
         path.push("pomo-tui");
         path.push("audio.json");
-        
+
         Ok(path)
     }
 

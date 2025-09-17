@@ -12,11 +12,16 @@ pub struct AudioPlayer {
     current_sink: Option<Sink>,
 }
 
+// Safety: AudioPlayer uses rodio types which are Send + Sync
+unsafe impl Send for AudioPlayer {}
+unsafe impl Sync for AudioPlayer {}
+
 impl AudioPlayer {
     /// Create a new audio player
     pub fn new() -> Result<Self, AudioError> {
-        let (_stream, stream_handle) = OutputStream::try_default()
-            .map_err(|e| AudioError::InitializationFailed(format!("Failed to create audio output: {}", e)))?;
+        let (_stream, stream_handle) = OutputStream::try_default().map_err(|e| {
+            AudioError::InitializationFailed(format!("Failed to create audio output: {}", e))
+        })?;
 
         Ok(Self {
             _stream,
@@ -69,11 +74,12 @@ impl AudioPlayer {
         sink.set_volume(config.volume);
 
         // Generate the appropriate sound based on type and style
-        let source = ToneGenerator::notification_sound(sound_type, config.notification_style, 44100);
+        let source =
+            ToneGenerator::notification_sound(sound_type, config.notification_style, 44100);
 
         // Add the source to the sink and play
         sink.append(source);
-        
+
         // Store the sink to allow stopping if needed
         self.current_sink = Some(sink);
 
@@ -102,8 +108,9 @@ impl AudioPlayer {
             .map_err(|e| AudioError::PlaybackFailed(format!("Audio test failed: {}", e)))?;
 
         // Generate a brief test tone
-        let source = ToneGenerator::notification_sound(SoundType::Test, NotificationStyle::Simple, 44100);
-        
+        let source =
+            ToneGenerator::notification_sound(SoundType::Test, NotificationStyle::Simple, 44100);
+
         sink.set_volume(0.5); // Medium volume for test
         sink.append(source);
         sink.detach();
@@ -136,7 +143,7 @@ mod tests {
         if let Ok(mut player) = AudioPlayer::new() {
             // Test playing different sound types
             let _ = player.play_sound(SoundType::Test, 0.5);
-            
+
             // Give some time for the sound to play
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
