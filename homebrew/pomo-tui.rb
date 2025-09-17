@@ -1,8 +1,8 @@
 class PomoTui < Formula
   desc "ADHD-focused Pomodoro timer with terminal interface and Focus mode integration"
   homepage "https://github.com/PatrickPriestley/pomo-tui"
-  url "https://github.com/PatrickPriestley/pomo-tui/archive/v0.2.9.tar.gz"
-  sha256 "483adce3f45e43d1624102922b683a390dfcdd57501de9332e7f17c5daef6a37"
+  url "https://github.com/PatrickPriestley/pomo-tui/archive/v0.3.0.tar.gz"
+  sha256 "f730687270760cbddc9561abd6ca68866a78d90e4ffdf8cd07784790e6b1b715"
   license "MIT"
   head "https://github.com/PatrickPriestley/pomo-tui.git", branch: "main"
 
