@@ -614,7 +614,11 @@ mod tests {
             }
 
             // Should have completed successfully
-            assert!(exercise.should_complete_session(), "Pattern {:?} should complete", pattern);
+            assert!(
+                exercise.should_complete_session(),
+                "Pattern {:?} should complete",
+                pattern
+            );
         }
     }
 

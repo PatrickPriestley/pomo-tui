@@ -25,7 +25,6 @@ opt-level = 0
 ratatui = "0.26"
 crossterm = "0.27"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"] }
-chrono = "0.4"
 thiserror = "1.0"
 rodio = { version = "0.17", optional = true }
 serde = { version = "1.0", features = ["derive"] }
@@ -36,9 +35,10 @@ dirs = "5.0"
 default = ["audio"]
 audio = ["rodio"]
 
-[dev-dependencies]
-tempfile = "3"
-
 [[bin]]
 name = "pomo-tui"
 path = "src/main.rs"
+
+[metadata.cargo-machete]
+# Ignore conditionally compiled audio dependencies
+ignored = ["dirs", "serde", "serde_json", "rodio"]
