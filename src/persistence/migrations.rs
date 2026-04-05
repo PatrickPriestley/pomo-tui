@@ -15,12 +15,28 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_completed_at ON sessions(completed_at);
 ";
 
+const V2_SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS interruptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_started_at TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_interruptions_session ON interruptions(session_started_at);
+";
+
 pub fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
 
     if version < 1 {
         conn.execute_batch(V1_SCHEMA)?;
         conn.pragma_update(None, "user_version", 1)?;
+    }
+
+    if version < 2 {
+        conn.execute_batch(V2_SCHEMA)?;
+        conn.pragma_update(None, "user_version", 2)?;
     }
 
     Ok(())
@@ -52,6 +68,18 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
+    }
+
+    #[test]
+    fn test_v2_migration_creates_interruptions_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        // Verify interruptions table exists
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM interruptions", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
     }
 }

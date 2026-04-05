@@ -13,6 +13,15 @@ pub struct CompletedSession {
     pub was_completed: bool,
 }
 
+/// An interruption logged during a Pomodoro session.
+#[derive(Debug, Clone)]
+pub struct StoredInterruption {
+    pub id: i64,
+    pub session_started_at: DateTime<Utc>,
+    pub timestamp: DateTime<Utc>,
+    pub label: String,
+}
+
 /// A session retrieved from the database (includes row id).
 #[derive(Debug, Clone)]
 pub struct StoredSession {

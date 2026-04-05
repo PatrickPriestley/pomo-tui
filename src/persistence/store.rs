@@ -4,7 +4,7 @@ use chrono::{DateTime, Local, NaiveTime, TimeZone, Utc};
 use rusqlite::{params, Connection};
 
 use super::migrations;
-use super::models::{CompletedSession, StoredSession};
+use super::models::{CompletedSession, StoredInterruption, StoredSession};
 
 pub struct SessionStore {
     conn: Connection,
@@ -114,6 +114,56 @@ impl SessionStore {
             [],
             |row| row.get::<_, u64>(0),
         )
+    }
+
+    /// Records an interruption during an active session.
+    /// Uses session_started_at as the join key since the session row
+    /// doesn't exist yet (it's created on completion).
+    pub fn record_interruption(
+        &self,
+        session_started_at: &DateTime<Utc>,
+        label: &str,
+    ) -> Result<i64, rusqlite::Error> {
+        self.conn.execute(
+            "INSERT INTO interruptions (session_started_at, timestamp, label) VALUES (?1, ?2, ?3)",
+            params![
+                session_started_at.to_rfc3339(),
+                Utc::now().to_rfc3339(),
+                label,
+            ],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Returns interruptions for a given session.
+    pub fn interruptions_for_session(
+        &self,
+        session_started_at: &DateTime<Utc>,
+    ) -> Result<Vec<StoredInterruption>, rusqlite::Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, session_started_at, timestamp, label
+             FROM interruptions
+             WHERE session_started_at = ?1
+             ORDER BY timestamp ASC",
+        )?;
+
+        let rows = stmt.query_map(params![session_started_at.to_rfc3339()], |row| {
+            let started_str: String = row.get(1)?;
+            let ts_str: String = row.get(2)?;
+
+            Ok(StoredInterruption {
+                id: row.get(0)?,
+                session_started_at: DateTime::parse_from_rfc3339(&started_str)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+                timestamp: DateTime::parse_from_rfc3339(&ts_str)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+                label: row.get(3)?,
+            })
+        })?;
+
+        rows.collect()
     }
 }
 
@@ -230,5 +280,30 @@ mod tests {
 
         let today_sessions = store.sessions_today().unwrap();
         assert_eq!(today_sessions.len(), 1);
+    }
+
+    #[test]
+    fn test_record_interruption() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let started_at = Utc::now() - Duration::minutes(10);
+
+        let id = store.record_interruption(&started_at, "Slack from Jesse").unwrap();
+        assert_eq!(id, 1);
+    }
+
+    #[test]
+    fn test_interruptions_for_session() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let started_at = Utc::now() - Duration::minutes(20);
+
+        store.record_interruption(&started_at, "Slack ping").unwrap();
+        store.record_interruption(&started_at, "context switch").unwrap();
+        store.record_interruption(&started_at, "").unwrap();
+
+        let interruptions = store.interruptions_for_session(&started_at).unwrap();
+        assert_eq!(interruptions.len(), 3);
+        assert_eq!(interruptions[0].label, "Slack ping");
+        assert_eq!(interruptions[1].label, "context switch");
+        assert_eq!(interruptions[2].label, "");
     }
 }

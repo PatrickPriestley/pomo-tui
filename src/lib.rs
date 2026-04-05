@@ -8,3 +8,4 @@ pub mod core;
 pub mod integrations;
 pub mod persistence;
 pub mod tui;
+pub mod utils;

@@ -53,6 +53,12 @@ pub struct App {
     // the old receiver is silently dropped. This is intentional — the timer
     // should never wait for Jira.
     jira_fetch_result: Option<tokio::sync::oneshot::Receiver<Option<String>>>,
+    // Interruption logger
+    interruption_count: u32,
+    interruption_input_active: bool,
+    interruption_input_buffer: String,
+    // Obsidian integration
+    obsidian_client: Option<crate::integrations::ObsidianClient>,
     // Screen navigation
     screen: Screen,
     daily_summary_sessions: Vec<StoredSession>,
@@ -125,6 +131,10 @@ impl App {
         // Load app config and initialize Jira client if configured
         let app_config = AppConfig::load();
         let jira_client = app_config.jira.as_ref().map(JiraClient::new);
+        let obsidian_client = app_config
+            .obsidian
+            .as_ref()
+            .map(crate::integrations::ObsidianClient::new);
 
         Ok(Self {
             timer: Timer::new(25 * 60), // 25 minute pomodoro
@@ -159,6 +169,10 @@ impl App {
             current_jira_key: None,
             jira_client,
             jira_fetch_result: None,
+            interruption_count: 0,
+            interruption_input_active: false,
+            interruption_input_buffer: String::new(),
+            obsidian_client,
             screen: Screen::Timer,
             daily_summary_sessions: Vec::new(),
             daily_summary_scroll: 0,
@@ -223,6 +237,20 @@ impl App {
                     self.task_input_buffer.pop();
                 }
                 KeyCode::Char(c) => self.task_input_buffer.push(c),
+                _ => {}
+            }
+            return;
+        }
+
+        // Interruption input modal — second priority
+        if self.interruption_input_active {
+            match key.code {
+                KeyCode::Enter => self.confirm_interruption(),
+                KeyCode::Esc => self.cancel_interruption(),
+                KeyCode::Backspace => {
+                    self.interruption_input_buffer.pop();
+                }
+                KeyCode::Char(c) => self.interruption_input_buffer.push(c),
                 _ => {}
             }
             return;
@@ -317,6 +345,15 @@ impl App {
             KeyCode::Char('b') => self.skip_break(),
             KeyCode::Char('h') => self.shorten_break(),
             KeyCode::Char('e') => self.extend_break(),
+            KeyCode::Char('i') => {
+                // Only open interruption modal during active Pomodoro
+                if self.mode == AppMode::Pomodoro
+                    && self.timer.state() == crate::core::timer::TimerState::Running
+                {
+                    self.interruption_input_active = true;
+                    self.interruption_input_buffer.clear();
+                }
+            }
             KeyCode::Char('t') => self.toggle_breathing(),
             KeyCode::Char('x') => self.skip_breathing(),
             KeyCode::Char('d') => {
@@ -470,12 +507,15 @@ impl App {
 
     fn reset_timer(&mut self) {
         self.timer.reset();
-        // Clear task state on reset
+        // Clear task and interruption state on reset
         if self.mode == AppMode::Pomodoro {
             self.current_task_label = None;
             self.current_jira_key = None;
             self.jira_fetch_result = None;
             self.pomodoro_started_at = None;
+            self.interruption_count = 0;
+            self.interruption_input_active = false;
+            self.interruption_input_buffer.clear();
         }
         if self.mode == AppMode::Break {
             self.breathing_exercise = None;
@@ -747,6 +787,9 @@ impl App {
         self.current_task_label = None;
         self.current_jira_key = None;
         self.jira_fetch_result = None;
+        self.interruption_count = 0;
+        self.interruption_input_active = false;
+        self.interruption_input_buffer.clear();
         // DND will be enabled when timer starts (in toggle_timer)
         // Don't auto-start - wait for user to press space
     }
@@ -977,22 +1020,34 @@ impl App {
         Ok(SessionStore::open(db_path)?)
     }
 
-    fn record_completed_session(&self, was_completed: bool) {
+    fn record_completed_session(&mut self, was_completed: bool) {
+        // Force-close interruption modal if timer expired while it was open
+        self.interruption_input_active = false;
+        self.interruption_input_buffer.clear();
+
+        let now = chrono::Utc::now();
+        let duration_secs = self.timer.duration().as_secs() as u32;
+        let started_at = self.pomodoro_started_at.unwrap_or(now);
+        let session = CompletedSession {
+            started_at,
+            completed_at: now,
+            duration_seconds: duration_secs,
+            task_label: self.current_task_label.clone(),
+            jira_ticket_key: self.current_jira_key.clone(),
+            interruption_count: self.interruption_count,
+            was_completed,
+        };
+
         if let Some(ref store) = self.session_store {
-            let now = chrono::Utc::now();
-            let duration_secs = self.timer.duration().as_secs() as u32;
-            let started_at = self.pomodoro_started_at.unwrap_or(now);
-            let session = CompletedSession {
-                started_at,
-                completed_at: now,
-                duration_seconds: duration_secs,
-                task_label: self.current_task_label.clone(),
-                jira_ticket_key: self.current_jira_key.clone(),
-                interruption_count: 0,
-                was_completed,
-            };
             if let Err(e) = store.record_session(&session) {
                 eprintln!("Failed to save session: {}", e);
+            }
+        }
+
+        // Append to Obsidian daily note if configured
+        if let Some(ref obsidian) = self.obsidian_client {
+            if let Err(e) = obsidian.append_session(&session) {
+                eprintln!("Failed to append to Obsidian: {}", e);
             }
         }
     }
@@ -1074,6 +1129,29 @@ impl App {
         }
     }
 
+    // Interruption logger
+
+    fn confirm_interruption(&mut self) {
+        self.interruption_input_active = false;
+        self.interruption_count += 1;
+        let label = self.interruption_input_buffer.trim().to_string();
+        self.interruption_input_buffer.clear();
+
+        // Persist interruption to DB immediately
+        if let Some(ref store) = self.session_store {
+            if let Some(started_at) = self.pomodoro_started_at {
+                if let Err(e) = store.record_interruption(&started_at, &label) {
+                    eprintln!("Failed to save interruption: {}", e);
+                }
+            }
+        }
+    }
+
+    fn cancel_interruption(&mut self) {
+        self.interruption_input_active = false;
+        self.interruption_input_buffer.clear();
+    }
+
     // Screen navigation
 
     fn open_daily_summary(&mut self) {
@@ -1103,6 +1181,18 @@ impl App {
 
     pub fn daily_summary_scroll(&self) -> u16 {
         self.daily_summary_scroll
+    }
+
+    pub fn interruption_input_active(&self) -> bool {
+        self.interruption_input_active
+    }
+
+    pub fn interruption_input_buffer(&self) -> &str {
+        &self.interruption_input_buffer
+    }
+
+    pub fn interruption_count(&self) -> u32 {
+        self.interruption_count
     }
 
     // Break activity getters
@@ -1845,5 +1935,108 @@ mod tests {
         assert_eq!(app.mode(), initial_mode);
         assert_eq!(app.session_count(), initial_count);
         assert_eq!(app.screen(), Screen::DailySummary);
+    }
+
+    #[test]
+    fn test_i_key_opens_interruption_modal() {
+        let mut app = App::new().unwrap();
+        // Start pomodoro timer
+        app.task_input_active = true;
+        app.confirm_task_input(); // starts timer
+
+        assert!(!app.interruption_input_active());
+
+        let key_event = KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE);
+        app.handle_key(key_event);
+
+        assert!(app.interruption_input_active());
+    }
+
+    #[test]
+    fn test_i_key_ignored_during_break() {
+        let mut app = App::new().unwrap();
+        app.skip_to_break();
+        assert_eq!(app.mode(), AppMode::Break);
+
+        let key_event = KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE);
+        app.handle_key(key_event);
+
+        assert!(!app.interruption_input_active());
+    }
+
+    #[test]
+    fn test_i_key_ignored_when_idle() {
+        let mut app = App::new().unwrap();
+        assert_eq!(app.timer().state(), crate::core::timer::TimerState::Idle);
+
+        let key_event = KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE);
+        app.handle_key(key_event);
+
+        assert!(!app.interruption_input_active());
+    }
+
+    #[test]
+    fn test_confirm_interruption_increments_count() {
+        let mut app = App::new().unwrap();
+        assert_eq!(app.interruption_count(), 0);
+
+        app.interruption_input_active = true;
+        app.interruption_input_buffer = "Slack ping".to_string();
+        app.confirm_interruption();
+
+        assert_eq!(app.interruption_count(), 1);
+        assert!(!app.interruption_input_active());
+    }
+
+    #[test]
+    fn test_cancel_interruption_no_increment() {
+        let mut app = App::new().unwrap();
+        app.interruption_input_active = true;
+        app.interruption_input_buffer = "something".to_string();
+        app.cancel_interruption();
+
+        assert_eq!(app.interruption_count(), 0);
+        assert!(!app.interruption_input_active());
+        assert!(app.interruption_input_buffer().is_empty());
+    }
+
+    #[test]
+    fn test_interruption_count_persisted() {
+        let mut app = App::with_in_memory_store().unwrap();
+
+        // Start timer
+        app.task_input_active = true;
+        app.confirm_task_input();
+
+        // Log 2 interruptions
+        app.interruption_input_active = true;
+        app.interruption_input_buffer = "Slack".to_string();
+        app.confirm_interruption();
+        app.interruption_input_active = true;
+        app.interruption_input_buffer = "context switch".to_string();
+        app.confirm_interruption();
+
+        assert_eq!(app.interruption_count(), 2);
+
+        // Skip to break records the session
+        app.skip_to_break();
+
+        let sessions = app.session_store().unwrap().sessions_today().unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].interruption_count, 2);
+    }
+
+    #[test]
+    fn test_interruption_count_reset_on_new_pomodoro() {
+        let mut app = App::new().unwrap();
+        app.interruption_count = 3;
+        app.interruption_input_active = true;
+        app.interruption_input_buffer = "leftover".to_string();
+
+        app.start_pomodoro();
+
+        assert_eq!(app.interruption_count(), 0);
+        assert!(!app.interruption_input_active());
+        assert!(app.interruption_input_buffer().is_empty());
     }
 }

@@ -258,6 +258,12 @@ fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    // Handle interruption input modal
+    if app.interruption_input_active() {
+        render_interruption_input(frame, app, area);
+        return;
+    }
+
     // Handle confirmation dialog
     if let Some(dialog) = app.confirmation_dialog() {
         render_confirmation_dialog(frame, dialog, area);
@@ -514,6 +520,9 @@ fn get_wide_controls(app: &App) -> Vec<Line<'static>> {
         ]);
 
         let mut second_line = vec![
+            Span::raw("I: "),
+            Span::styled("Interrupt", Style::default().fg(Color::Magenta)),
+            Span::raw(" | "),
             Span::raw("Tab: "),
             Span::styled("Summary", Style::default().fg(Color::LightBlue)),
         ];
@@ -1110,15 +1119,43 @@ fn render_task_input(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(widget, area);
 }
 
-pub fn format_duration(total_secs: u32) -> String {
-    let hours = total_secs / 3600;
-    let minutes = (total_secs % 3600) / 60;
-    if hours > 0 {
-        format!("{}h {}m", hours, minutes)
-    } else {
-        format!("{}m", minutes)
-    }
+fn render_interruption_input(frame: &mut Frame, app: &App, area: Rect) {
+    let input_display = format!("{}▌", app.interruption_input_buffer());
+
+    let widget = Paragraph::new(vec![
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "What interrupted you?",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            input_display,
+            Style::default().fg(Color::White),
+        )]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            format!("Interruptions so far: {}", app.interruption_count()),
+            Style::default().fg(Color::DarkGray),
+        )]),
+        Line::from(vec![Span::styled(
+            "Enter to log · Esc to cancel",
+            Style::default().fg(Color::DarkGray),
+        )]),
+    ])
+    .alignment(Alignment::Center)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Log Interruption"),
+    );
+
+    frame.render_widget(widget, area);
 }
+
+pub use crate::utils::format_duration;
 
 fn render_daily_summary_screen(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
@@ -1146,15 +1183,18 @@ fn render_daily_summary_screen(frame: &mut Frame, app: &App) {
     let completed = sessions.iter().filter(|s| s.was_completed).count();
     let skipped = sessions.len() - completed;
 
+    let total_interruptions: u32 = sessions.iter().map(|s| s.interruption_count).sum();
+
     let stats_text = if sessions.is_empty() {
         "No sessions today".to_string()
     } else {
         format!(
-            "Total Focus Time: {} ({} sessions)  |  Completed: {}  |  Skipped: {}",
+            "Total Focus Time: {} ({} sessions)  |  Completed: {}  |  Skipped: {}  |  Interruptions: {}",
             format_duration(total_secs),
             sessions.len(),
             completed,
-            skipped
+            skipped,
+            total_interruptions
         )
     };
 
@@ -1174,7 +1214,7 @@ fn render_daily_summary_screen(frame: &mut Frame, app: &App) {
             );
         frame.render_widget(empty, chunks[2]);
     } else {
-        let header = Row::new(vec!["#", "Time", "Duration", "Status", "Task"])
+        let header = Row::new(vec!["#", "Time", "Duration", "Status", "Int", "Task"])
             .style(
                 Style::default()
                     .fg(Color::Yellow)
@@ -1204,6 +1244,7 @@ fn render_daily_summary_screen(frame: &mut Frame, app: &App) {
                     time,
                     duration,
                     status.to_string(),
+                    session.interruption_count.to_string(),
                     task.to_string(),
                 ])
             })
@@ -1214,6 +1255,7 @@ fn render_daily_summary_screen(frame: &mut Frame, app: &App) {
             Constraint::Length(6),
             Constraint::Length(8),
             Constraint::Length(6),
+            Constraint::Length(4),
             Constraint::Min(10),
         ];
 
@@ -1351,12 +1393,4 @@ mod tests {
         assert_eq!(wide_break.len(), 2); // Fewer lines for wide
     }
 
-    #[test]
-    fn test_format_duration() {
-        assert_eq!(format_duration(0), "0m");
-        assert_eq!(format_duration(25 * 60), "25m");
-        assert_eq!(format_duration(60 * 60), "1h 0m");
-        assert_eq!(format_duration(90 * 60), "1h 30m");
-        assert_eq!(format_duration(2 * 3600 + 15 * 60), "2h 15m");
-    }
 }
