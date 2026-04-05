@@ -1,16 +1,21 @@
 use crate::core::breathing::BreathPhase;
 use crate::integrations::DndState;
-use crate::tui::app::{App, AppMode};
+use crate::tui::app::{App, AppMode, Screen};
 use ratatui::{
     prelude::*,
     symbols,
     widgets::{
         canvas::{Canvas, Circle, Context},
-        Block, Borders, Gauge, Paragraph,
+        Block, Borders, Gauge, Paragraph, Row, Table,
     },
 };
 
 pub fn draw(frame: &mut Frame, app: &App) {
+    if app.screen() == Screen::DailySummary {
+        render_daily_summary_screen(frame, app);
+        return;
+    }
+
     // Check if we have a status message to display
     let has_status = app.status_message().is_some();
 
@@ -508,8 +513,14 @@ fn get_wide_controls(app: &App) -> Vec<Line<'static>> {
             Span::styled("Quit", Style::default().fg(Color::Red)),
         ]);
 
+        let mut second_line = vec![
+            Span::raw("Tab: "),
+            Span::styled("Summary", Style::default().fg(Color::LightBlue)),
+        ];
+
         if cfg!(feature = "audio") {
-            let audio_line = vec![
+            second_line.extend(vec![
+                Span::raw(" | "),
                 Span::raw("M: "),
                 Span::styled("Mute", Style::default().fg(Color::Magenta)),
                 Span::raw(" | "),
@@ -518,18 +529,19 @@ fn get_wide_controls(app: &App) -> Vec<Line<'static>> {
                 Span::raw(" | "),
                 Span::raw("T: "),
                 Span::styled("Test Audio", Style::default().fg(Color::Yellow)),
-                Span::raw(" | "),
-                Span::raw("C: "),
-                Span::styled("Clear", Style::default().fg(Color::Gray)),
-                Span::raw(" | "),
-                Span::raw("F: "),
-                Span::styled("Focus Help", Style::default().fg(Color::Cyan)),
-            ];
-
-            vec![Line::from(first_line), Line::from(audio_line)]
-        } else {
-            vec![Line::from(first_line)]
+            ]);
         }
+
+        second_line.extend(vec![
+            Span::raw(" | "),
+            Span::raw("C: "),
+            Span::styled("Clear", Style::default().fg(Color::Gray)),
+            Span::raw(" | "),
+            Span::raw("F: "),
+            Span::styled("Focus Help", Style::default().fg(Color::Cyan)),
+        ]);
+
+        vec![Line::from(first_line), Line::from(second_line)]
     }
 }
 
@@ -642,6 +654,12 @@ fn get_medium_controls(app: &App) -> Vec<Line<'static>> {
             ]);
         }
 
+        second_line.extend(vec![
+            Span::raw(" | "),
+            Span::raw("Tab: "),
+            Span::styled("Summary", Style::default().fg(Color::LightBlue)),
+        ]);
+
         vec![Line::from(first_line), Line::from(second_line)]
     }
 }
@@ -716,6 +734,9 @@ fn get_narrow_controls(app: &App) -> Vec<Line<'static>> {
                 Span::raw(" | "),
                 Span::raw("R: "),
                 Span::styled("Reset", Style::default().fg(Color::Yellow)),
+                Span::raw(" | "),
+                Span::raw("Tab: "),
+                Span::styled("Summary", Style::default().fg(Color::LightBlue)),
             ]),
             Line::from(vec![
                 Span::raw("S: "),
@@ -1089,6 +1110,139 @@ fn render_task_input(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(widget, area);
 }
 
+pub fn format_duration(total_secs: u32) -> String {
+    let hours = total_secs / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    if hours > 0 {
+        format!("{}h {}m", hours, minutes)
+    } else {
+        format!("{}m", minutes)
+    }
+}
+
+fn render_daily_summary_screen(frame: &mut Frame, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(3), // Title
+            Constraint::Length(3), // Stats
+            Constraint::Min(5),   // Session list
+            Constraint::Length(3), // Controls
+        ])
+        .split(frame.size());
+
+    let sessions = app.daily_summary_sessions();
+
+    // Title
+    let today = chrono::Local::now().format("%Y-%m-%d");
+    let title = Paragraph::new(format!("Daily Summary — {}", today))
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL));
+    frame.render_widget(title, chunks[0]);
+
+    // Stats bar
+    let total_secs: u32 = sessions.iter().map(|s| s.duration_seconds).sum();
+    let completed = sessions.iter().filter(|s| s.was_completed).count();
+    let skipped = sessions.len() - completed;
+
+    let stats_text = if sessions.is_empty() {
+        "No sessions today".to_string()
+    } else {
+        format!(
+            "Total Focus Time: {} ({} sessions)  |  Completed: {}  |  Skipped: {}",
+            format_duration(total_secs),
+            sessions.len(),
+            completed,
+            skipped
+        )
+    };
+
+    let stats = Paragraph::new(stats_text)
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL));
+    frame.render_widget(stats, chunks[1]);
+
+    // Session list
+    if sessions.is_empty() {
+        let empty = Paragraph::new("Start a Pomodoro to see your progress here.")
+            .alignment(Alignment::Center)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Sessions"),
+            );
+        frame.render_widget(empty, chunks[2]);
+    } else {
+        let header = Row::new(vec!["#", "Time", "Duration", "Status", "Task"])
+            .style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        let scroll = app.daily_summary_scroll() as usize;
+        let rows: Vec<Row> = sessions
+            .iter()
+            .enumerate()
+            .skip(scroll)
+            .map(|(i, session)| {
+                let time = session
+                    .completed_at
+                    .with_timezone(&chrono::Local)
+                    .format("%H:%M")
+                    .to_string();
+                let duration = format_duration(session.duration_seconds);
+                let status = if session.was_completed { "✓" } else { "✗" };
+                let task = session
+                    .task_label
+                    .as_deref()
+                    .unwrap_or("(no label)");
+
+                Row::new(vec![
+                    format!("{}", i + 1),
+                    time,
+                    duration,
+                    status.to_string(),
+                    task.to_string(),
+                ])
+            })
+            .collect();
+
+        let widths = [
+            Constraint::Length(3),
+            Constraint::Length(6),
+            Constraint::Length(8),
+            Constraint::Length(6),
+            Constraint::Min(10),
+        ];
+
+        let table = Table::new(rows, widths)
+            .header(header)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Sessions"),
+            );
+        frame.render_widget(table, chunks[2]);
+    }
+
+    // Controls
+    let controls = Paragraph::new(vec![Line::from(vec![
+        Span::raw("Tab/Esc: "),
+        Span::styled("Back to Timer", Style::default().fg(Color::Green)),
+        Span::raw("  |  "),
+        Span::raw("↑↓: "),
+        Span::styled("Scroll", Style::default().fg(Color::Cyan)),
+        Span::raw("  |  "),
+        Span::raw("Q: "),
+        Span::styled("Quit", Style::default().fg(Color::Red)),
+    ])])
+    .alignment(Alignment::Center)
+    .block(Block::default().borders(Borders::ALL).title("Controls"));
+    frame.render_widget(controls, chunks[3]);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1116,8 +1270,10 @@ mod tests {
             assert!(audio_text.contains("Volume"));
             assert!(audio_text.contains("Test Audio"));
         } else {
-            // Without audio feature, should have single line
-            assert_eq!(controls.len(), 1);
+            // Without audio feature, should still have two lines (main controls + Tab/Summary line)
+            assert_eq!(controls.len(), 2);
+            let second_text = format!("{:?}", controls[1]);
+            assert!(second_text.contains("Summary"));
         }
     }
 
@@ -1193,5 +1349,14 @@ mod tests {
         // Break mode should have different number of lines
         assert_eq!(narrow_break.len(), 3); // Most lines for narrow
         assert_eq!(wide_break.len(), 2); // Fewer lines for wide
+    }
+
+    #[test]
+    fn test_format_duration() {
+        assert_eq!(format_duration(0), "0m");
+        assert_eq!(format_duration(25 * 60), "25m");
+        assert_eq!(format_duration(60 * 60), "1h 0m");
+        assert_eq!(format_duration(90 * 60), "1h 30m");
+        assert_eq!(format_duration(2 * 3600 + 15 * 60), "2h 15m");
     }
 }

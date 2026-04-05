@@ -3,6 +3,7 @@ use crate::audio::{AudioManager, SoundType};
 use crate::core::{BreakActivity, BreakAnimation, BreathingExercise, BreathingPattern, Timer};
 use crate::config::AppConfig;
 use crate::integrations::{DndState, JiraClient, MacOSDndController};
+use crate::persistence::models::StoredSession;
 use crate::persistence::{CompletedSession, SessionStore};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent},
@@ -52,6 +53,10 @@ pub struct App {
     // the old receiver is silently dropped. This is intentional — the timer
     // should never wait for Jira.
     jira_fetch_result: Option<tokio::sync::oneshot::Receiver<Option<String>>>,
+    // Screen navigation
+    screen: Screen,
+    daily_summary_sessions: Vec<StoredSession>,
+    daily_summary_scroll: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -63,6 +68,12 @@ pub enum AppMode {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConfirmationDialog {
     ResetTimer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Screen {
+    Timer,
+    DailySummary,
 }
 
 impl App {
@@ -148,6 +159,9 @@ impl App {
             current_jira_key: None,
             jira_client,
             jira_fetch_result: None,
+            screen: Screen::Timer,
+            daily_summary_sessions: Vec::new(),
+            daily_summary_scroll: 0,
         })
     }
 
@@ -209,6 +223,26 @@ impl App {
                     self.task_input_buffer.pop();
                 }
                 KeyCode::Char(c) => self.task_input_buffer.push(c),
+                _ => {}
+            }
+            return;
+        }
+
+        // Daily summary screen — Tab toggles, Esc/q returns, arrows scroll
+        if self.screen == Screen::DailySummary {
+            match key.code {
+                KeyCode::Tab | KeyCode::Esc => self.screen = Screen::Timer,
+                KeyCode::Char('q') => {
+                    self.restore_dnd_state();
+                    self.should_quit = true;
+                }
+                KeyCode::Up => {
+                    self.daily_summary_scroll = self.daily_summary_scroll.saturating_sub(1);
+                }
+                KeyCode::Down => {
+                    let max = self.daily_summary_sessions.len().saturating_sub(1) as u16;
+                    self.daily_summary_scroll = (self.daily_summary_scroll + 1).min(max);
+                }
                 _ => {}
             }
             return;
@@ -389,6 +423,7 @@ impl App {
             KeyCode::Char('-') => self.decrease_volume(),
             #[cfg(feature = "audio")]
             KeyCode::Char('v') => self.play_test_sound(),
+            KeyCode::Tab => self.open_daily_summary(),
             _ => {}
         }
     }
@@ -1037,6 +1072,37 @@ impl App {
                 self.jira_fetch_result = None;
             }
         }
+    }
+
+    // Screen navigation
+
+    fn open_daily_summary(&mut self) {
+        if let Some(ref store) = self.session_store {
+            match store.sessions_today() {
+                Ok(sessions) => {
+                    self.daily_summary_sessions = sessions;
+                    self.daily_summary_scroll = 0;
+                    self.screen = Screen::DailySummary;
+                }
+                Err(e) => {
+                    self.status_message = Some(format!("Failed to load sessions: {}", e));
+                }
+            }
+        } else {
+            self.status_message = Some("Could not open session database".to_string());
+        }
+    }
+
+    pub fn screen(&self) -> Screen {
+        self.screen
+    }
+
+    pub fn daily_summary_sessions(&self) -> &[StoredSession] {
+        &self.daily_summary_sessions
+    }
+
+    pub fn daily_summary_scroll(&self) -> u16 {
+        self.daily_summary_scroll
     }
 
     // Break activity getters
@@ -1697,5 +1763,87 @@ mod tests {
 
         assert!(app.current_task_label.is_none());
         assert!(app.current_jira_key.is_none());
+    }
+
+    #[test]
+    fn test_tab_opens_daily_summary() {
+        let mut app = App::with_in_memory_store().unwrap();
+        assert_eq!(app.screen(), Screen::Timer);
+
+        let key_event = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        app.handle_key(key_event);
+
+        assert_eq!(app.screen(), Screen::DailySummary);
+    }
+
+    #[test]
+    fn test_tab_returns_to_timer() {
+        let mut app = App::with_in_memory_store().unwrap();
+        app.screen = Screen::DailySummary;
+
+        let key_event = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        app.handle_key(key_event);
+
+        assert_eq!(app.screen(), Screen::Timer);
+    }
+
+    #[test]
+    fn test_esc_returns_to_timer_from_summary() {
+        let mut app = App::with_in_memory_store().unwrap();
+        app.screen = Screen::DailySummary;
+
+        let key_event = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        app.handle_key(key_event);
+
+        assert_eq!(app.screen(), Screen::Timer);
+    }
+
+    #[test]
+    fn test_daily_summary_loads_sessions() {
+        let mut app = App::with_in_memory_store().unwrap();
+
+        // Record a session via skip_to_break
+        app.task_input_active = true;
+        app.task_input_buffer = "Test task".to_string();
+        app.confirm_task_input();
+        app.skip_to_break();
+
+        // Open summary
+        app.open_daily_summary();
+
+        assert_eq!(app.screen(), Screen::DailySummary);
+        assert_eq!(app.daily_summary_sessions().len(), 1);
+        assert_eq!(
+            app.daily_summary_sessions()[0].task_label.as_deref(),
+            Some("Test task")
+        );
+    }
+
+    #[test]
+    fn test_daily_summary_scroll_bounds() {
+        let mut app = App::with_in_memory_store().unwrap();
+        app.screen = Screen::DailySummary;
+        app.daily_summary_scroll = 0;
+
+        // Scroll up from 0 — should stay at 0
+        let up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        app.handle_key(up);
+        assert_eq!(app.daily_summary_scroll(), 0);
+    }
+
+    #[test]
+    fn test_timer_keys_ignored_on_summary() {
+        let mut app = App::with_in_memory_store().unwrap();
+        app.screen = Screen::DailySummary;
+        let initial_mode = app.mode();
+        let initial_count = app.session_count();
+
+        // Press 's' (skip to break) — should be ignored
+        let key_event = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE);
+        app.handle_key(key_event);
+
+        assert_eq!(app.mode(), initial_mode);
+        assert_eq!(app.session_count(), initial_count);
+        assert_eq!(app.screen(), Screen::DailySummary);
     }
 }
