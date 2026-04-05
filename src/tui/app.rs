@@ -2,6 +2,7 @@
 use crate::audio::{AudioManager, SoundType};
 use crate::core::{BreakActivity, BreakAnimation, BreathingExercise, BreathingPattern, Timer};
 use crate::integrations::{DndState, MacOSDndController};
+use crate::persistence::{CompletedSession, SessionStore};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -36,6 +37,9 @@ pub struct App {
     confirmation_dialog: Option<ConfirmationDialog>,
     #[cfg(feature = "audio")]
     audio_manager: AudioManager,
+    // Session persistence
+    session_store: Option<SessionStore>,
+    pomodoro_started_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -86,6 +90,15 @@ impl App {
         #[cfg(feature = "audio")]
         let audio_manager = AudioManager::default();
 
+        // Initialize session persistence (non-fatal if it fails)
+        let session_store = match Self::init_session_store() {
+            Ok(store) => Some(store),
+            Err(e) => {
+                eprintln!("Warning: session persistence unavailable: {}", e);
+                None
+            }
+        };
+
         Ok(Self {
             timer: Timer::new(25 * 60), // 25 minute pomodoro
             breathing_exercise: None,
@@ -111,6 +124,8 @@ impl App {
             confirmation_dialog: None,
             #[cfg(feature = "audio")]
             audio_manager,
+            session_store,
+            pomodoro_started_at: None,
         })
     }
 
@@ -346,8 +361,9 @@ impl App {
         match self.timer.state() {
             crate::core::timer::TimerState::Idle => {
                 self.timer.start();
-                // Enable DND when starting a Pomodoro session
+                // Track when pomodoro started for session persistence
                 if self.mode == AppMode::Pomodoro {
+                    self.pomodoro_started_at = Some(chrono::Utc::now());
                     self.auto_enable_dnd();
                 }
             }
@@ -395,8 +411,9 @@ impl App {
 
     pub fn skip_to_break(&mut self) {
         if self.mode == AppMode::Pomodoro {
-            // Increment session count when skipping pomodoro
+            // Increment session count and persist when skipping pomodoro
             self.session_count += 1;
+            self.record_completed_session(false);
             self.start_break();
             // DND is automatically disabled in start_break()
         }
@@ -565,9 +582,10 @@ impl App {
                 }
             }
 
-            // Update session count
+            // Update session count and persist
             if self.mode == AppMode::Pomodoro {
                 self.session_count += 1;
+                self.record_completed_session(true);
             }
         }
 
@@ -642,6 +660,7 @@ impl App {
         self.break_was_shortened = false; // Reset shortened state for new pomodoro
         self.breathing_exercise = None;
         self.breathing_complete = false;
+        self.pomodoro_started_at = None;
         // DND will be enabled when timer starts (in toggle_timer)
         // Don't auto-start - wait for user to press space
     }
@@ -850,6 +869,36 @@ impl App {
         }
     }
 
+    // Session persistence
+
+    fn init_session_store() -> Result<SessionStore, Box<dyn Error>> {
+        let data_dir = dirs::data_dir()
+            .ok_or("Could not determine data directory")?
+            .join("pomo-tui");
+        let db_path = data_dir.join("sessions.db");
+        Ok(SessionStore::open(db_path)?)
+    }
+
+    fn record_completed_session(&self, was_completed: bool) {
+        if let Some(ref store) = self.session_store {
+            let now = chrono::Utc::now();
+            let duration_secs = self.timer.duration().as_secs() as u32;
+            let started_at = self.pomodoro_started_at.unwrap_or(now);
+            let session = CompletedSession {
+                started_at,
+                completed_at: now,
+                duration_seconds: duration_secs,
+                task_label: None,
+                jira_ticket_key: None,
+                interruption_count: 0,
+                was_completed,
+            };
+            if let Err(e) = store.record_session(&session) {
+                eprintln!("Failed to save session: {}", e);
+            }
+        }
+    }
+
     // Break activity getters
     pub fn break_activity(&self) -> BreakActivity {
         self.break_activity
@@ -920,6 +969,18 @@ impl App {
         }
         // Start the timer immediately after selection
         self.timer.start();
+    }
+
+    #[cfg(test)]
+    pub fn with_in_memory_store() -> Result<Self, Box<dyn Error>> {
+        let mut app = Self::new()?;
+        app.session_store = Some(SessionStore::open_in_memory()?);
+        Ok(app)
+    }
+
+    #[cfg(test)]
+    pub fn session_store(&self) -> Option<&SessionStore> {
+        self.session_store.as_ref()
     }
 }
 
@@ -1373,5 +1434,28 @@ mod tests {
         // On non-macOS, DND should not be supported
         assert!(!app.is_dnd_supported());
         assert_eq!(app.dnd_state(), DndState::Unknown);
+    }
+
+    #[test]
+    fn test_session_recorded_on_skip_to_break() {
+        let mut app = App::with_in_memory_store().unwrap();
+
+        assert_eq!(
+            app.session_store().unwrap().total_session_count().unwrap(),
+            0
+        );
+
+        app.skip_to_break();
+
+        assert_eq!(
+            app.session_store().unwrap().total_session_count().unwrap(),
+            1
+        );
+
+        // Session should be marked as not completed (skipped)
+        let sessions = app.session_store().unwrap().sessions_today().unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert!(!sessions[0].was_completed);
+        assert_eq!(sessions[0].duration_seconds, 25 * 60);
     }
 }
