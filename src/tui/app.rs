@@ -1,7 +1,8 @@
 #[cfg(feature = "audio")]
 use crate::audio::{AudioManager, SoundType};
 use crate::core::{BreakActivity, BreakAnimation, BreathingExercise, BreathingPattern, Timer};
-use crate::integrations::{DndState, MacOSDndController};
+use crate::config::AppConfig;
+use crate::integrations::{DndState, JiraClient, MacOSDndController};
 use crate::persistence::{CompletedSession, SessionStore};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent},
@@ -40,6 +41,17 @@ pub struct App {
     // Session persistence
     session_store: Option<SessionStore>,
     pomodoro_started_at: Option<chrono::DateTime<chrono::Utc>>,
+    // Task input modal
+    task_input_active: bool,
+    task_input_buffer: String,
+    current_task_label: Option<String>,
+    current_jira_key: Option<String>,
+    // Jira integration
+    jira_client: Option<JiraClient>,
+    // Note: if a new session starts before the previous Jira fetch resolves,
+    // the old receiver is silently dropped. This is intentional — the timer
+    // should never wait for Jira.
+    jira_fetch_result: Option<tokio::sync::oneshot::Receiver<Option<String>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -99,6 +111,10 @@ impl App {
             }
         };
 
+        // Load app config and initialize Jira client if configured
+        let app_config = AppConfig::load();
+        let jira_client = app_config.jira.as_ref().map(JiraClient::new);
+
         Ok(Self {
             timer: Timer::new(25 * 60), // 25 minute pomodoro
             breathing_exercise: None,
@@ -126,6 +142,12 @@ impl App {
             audio_manager,
             session_store,
             pomodoro_started_at: None,
+            task_input_active: false,
+            task_input_buffer: String::new(),
+            current_task_label: None,
+            current_jira_key: None,
+            jira_client,
+            jira_fetch_result: None,
         })
     }
 
@@ -178,6 +200,20 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) {
+        // Task input modal — highest priority, consumes all keys
+        if self.task_input_active {
+            match key.code {
+                KeyCode::Enter => self.confirm_task_input(),
+                KeyCode::Esc => self.cancel_task_input(),
+                KeyCode::Backspace => {
+                    self.task_input_buffer.pop();
+                }
+                KeyCode::Char(c) => self.task_input_buffer.push(c),
+                _ => {}
+            }
+            return;
+        }
+
         match key.code {
             KeyCode::Char('q') => {
                 // Restore DND state before quitting
@@ -360,11 +396,13 @@ impl App {
     fn toggle_timer(&mut self) {
         match self.timer.state() {
             crate::core::timer::TimerState::Idle => {
-                self.timer.start();
-                // Track when pomodoro started for session persistence
                 if self.mode == AppMode::Pomodoro {
-                    self.pomodoro_started_at = Some(chrono::Utc::now());
-                    self.auto_enable_dnd();
+                    // Show task input modal before starting Pomodoro
+                    self.task_input_active = true;
+                    self.task_input_buffer.clear();
+                } else {
+                    // Break mode — start timer directly
+                    self.timer.start();
                 }
             }
             crate::core::timer::TimerState::Running => {
@@ -397,6 +435,13 @@ impl App {
 
     fn reset_timer(&mut self) {
         self.timer.reset();
+        // Clear task state on reset
+        if self.mode == AppMode::Pomodoro {
+            self.current_task_label = None;
+            self.current_jira_key = None;
+            self.jira_fetch_result = None;
+            self.pomodoro_started_at = None;
+        }
         if self.mode == AppMode::Break {
             self.breathing_exercise = None;
             self.breathing_complete = false;
@@ -559,6 +604,9 @@ impl App {
     }
 
     fn update(&mut self) {
+        // Check for completed Jira fetch
+        self.check_jira_fetch();
+
         // Check if timer expired
         if self.timer.is_expired() {
             self.timer.stop();
@@ -661,6 +709,9 @@ impl App {
         self.breathing_exercise = None;
         self.breathing_complete = false;
         self.pomodoro_started_at = None;
+        self.current_task_label = None;
+        self.current_jira_key = None;
+        self.jira_fetch_result = None;
         // DND will be enabled when timer starts (in toggle_timer)
         // Don't auto-start - wait for user to press space
     }
@@ -691,6 +742,18 @@ impl App {
 
     pub fn session_count(&self) -> u32 {
         self.session_count
+    }
+
+    pub fn task_input_active(&self) -> bool {
+        self.task_input_active
+    }
+
+    pub fn task_input_buffer(&self) -> &str {
+        &self.task_input_buffer
+    }
+
+    pub fn current_task_label(&self) -> Option<&str> {
+        self.current_task_label.as_deref()
     }
 
     pub fn break_was_shortened(&self) -> bool {
@@ -888,13 +951,90 @@ impl App {
                 started_at,
                 completed_at: now,
                 duration_seconds: duration_secs,
-                task_label: None,
-                jira_ticket_key: None,
+                task_label: self.current_task_label.clone(),
+                jira_ticket_key: self.current_jira_key.clone(),
                 interruption_count: 0,
                 was_completed,
             };
             if let Err(e) = store.record_session(&session) {
                 eprintln!("Failed to save session: {}", e);
+            }
+        }
+    }
+
+    // Task input
+
+    fn confirm_task_input(&mut self) {
+        self.task_input_active = false;
+        let input = self.task_input_buffer.trim().to_string();
+
+        if input.is_empty() {
+            self.current_task_label = None;
+            self.current_jira_key = None;
+        } else if Self::looks_like_jira_key(&input) {
+            let key = input.to_uppercase();
+            self.current_jira_key = Some(key.clone());
+            self.current_task_label = Some(key.clone());
+            self.start_jira_fetch(&key);
+        } else {
+            self.current_task_label = Some(input);
+            self.current_jira_key = None;
+        }
+
+        self.task_input_buffer.clear();
+        self.start_timer_after_input();
+    }
+
+    fn cancel_task_input(&mut self) {
+        self.task_input_active = false;
+        self.task_input_buffer.clear();
+        self.current_task_label = None;
+        self.current_jira_key = None;
+        self.start_timer_after_input();
+    }
+
+    fn start_timer_after_input(&mut self) {
+        self.timer.start();
+        self.pomodoro_started_at = Some(chrono::Utc::now());
+        self.auto_enable_dnd();
+    }
+
+    fn looks_like_jira_key(input: &str) -> bool {
+        // Match pattern: UPPERCASE-DIGITS (e.g. BOSS-441, IT-123)
+        // Require at least 2-char prefix to avoid false positives
+        let input = input.trim().to_uppercase();
+        let parts: Vec<&str> = input.split('-').collect();
+        parts.len() == 2
+            && parts[0].len() >= 2
+            && parts[0].chars().all(|c| c.is_ascii_uppercase())
+            && !parts[1].is_empty()
+            && parts[1].chars().all(|c| c.is_ascii_digit())
+    }
+
+    fn start_jira_fetch(&mut self, ticket_key: &str) {
+        if let Some(ref client) = self.jira_client {
+            let client = client.clone();
+            let key = ticket_key.to_string();
+            let (tx, rx) = tokio::sync::oneshot::channel();
+
+            tokio::spawn(async move {
+                let result = client.fetch_issue_summary(&key).await;
+                let _ = tx.send(result);
+            });
+
+            self.jira_fetch_result = Some(rx);
+        }
+    }
+
+    fn check_jira_fetch(&mut self) {
+        if let Some(ref mut rx) = self.jira_fetch_result {
+            if let Ok(result) = rx.try_recv() {
+                if let Some(summary) = result {
+                    if let Some(ref key) = self.current_jira_key {
+                        self.current_task_label = Some(format!("{}: {}", key, summary));
+                    }
+                }
+                self.jira_fetch_result = None;
             }
         }
     }
@@ -1457,5 +1597,105 @@ mod tests {
         assert_eq!(sessions.len(), 1);
         assert!(!sessions[0].was_completed);
         assert_eq!(sessions[0].duration_seconds, 25 * 60);
+    }
+
+    #[test]
+    fn test_looks_like_jira_key() {
+        assert!(App::looks_like_jira_key("BOSS-441"));
+        assert!(App::looks_like_jira_key("IT-123"));
+        assert!(App::looks_like_jira_key("boss-441")); // case-insensitive
+        assert!(App::looks_like_jira_key("  PROT-201  ")); // trimmed
+        assert!(!App::looks_like_jira_key("fix login bug"));
+        assert!(!App::looks_like_jira_key("Q-2")); // prefix too short
+        assert!(!App::looks_like_jira_key("BOSS"));
+        assert!(!App::looks_like_jira_key("441"));
+        assert!(!App::looks_like_jira_key("BOSS-"));
+        assert!(!App::looks_like_jira_key("-441"));
+    }
+
+    #[test]
+    fn test_task_input_confirm_sets_label() {
+        let mut app = App::new().unwrap();
+        app.task_input_active = true;
+        app.task_input_buffer = "Working on auth module".to_string();
+
+        app.confirm_task_input();
+
+        assert!(!app.task_input_active);
+        assert_eq!(
+            app.current_task_label.as_deref(),
+            Some("Working on auth module")
+        );
+        assert!(app.current_jira_key.is_none());
+        assert!(app.task_input_buffer.is_empty());
+    }
+
+    #[test]
+    fn test_task_input_cancel_clears_buffer() {
+        let mut app = App::new().unwrap();
+        app.task_input_active = true;
+        app.task_input_buffer = "some text".to_string();
+
+        app.cancel_task_input();
+
+        assert!(!app.task_input_active);
+        assert!(app.task_input_buffer.is_empty());
+        assert!(app.current_task_label.is_none());
+        assert!(app.current_jira_key.is_none());
+    }
+
+    #[test]
+    fn test_task_input_jira_key_detected() {
+        let mut app = App::new().unwrap();
+        app.task_input_active = true;
+        app.task_input_buffer = "BOSS-441".to_string();
+
+        app.confirm_task_input();
+
+        assert_eq!(app.current_jira_key.as_deref(), Some("BOSS-441"));
+        // Label defaults to the key until Jira fetch resolves
+        assert_eq!(app.current_task_label.as_deref(), Some("BOSS-441"));
+    }
+
+    #[test]
+    fn test_task_input_empty_skips_label() {
+        let mut app = App::new().unwrap();
+        app.task_input_active = true;
+        app.task_input_buffer = "   ".to_string();
+
+        app.confirm_task_input();
+
+        assert!(app.current_task_label.is_none());
+        assert!(app.current_jira_key.is_none());
+    }
+
+    #[test]
+    fn test_session_recorded_with_task_label() {
+        let mut app = App::with_in_memory_store().unwrap();
+
+        // Set a task label
+        app.task_input_active = true;
+        app.task_input_buffer = "Fix login bug".to_string();
+        app.confirm_task_input();
+
+        // Skip to break records the session
+        app.skip_to_break();
+
+        let sessions = app.session_store().unwrap().sessions_today().unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].task_label.as_deref(), Some("Fix login bug"));
+        assert!(sessions[0].jira_ticket_key.is_none());
+    }
+
+    #[test]
+    fn test_reset_timer_clears_task_state() {
+        let mut app = App::new().unwrap();
+        app.current_task_label = Some("Some task".to_string());
+        app.current_jira_key = Some("BOSS-441".to_string());
+
+        app.reset_timer();
+
+        assert!(app.current_task_label.is_none());
+        assert!(app.current_jira_key.is_none());
     }
 }

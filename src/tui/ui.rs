@@ -81,10 +81,16 @@ pub fn draw(frame: &mut Frame, app: &App) {
         ""
     };
 
+    let task_suffix = match app.current_task_label() {
+        Some(label) => format!(" | {}", label),
+        None => String::new(),
+    };
+
     let title = match app.mode() {
         AppMode::Pomodoro => format!(
-            "🍅 Pomodoro Timer - Session #{}{}{}",
+            "🍅 Pomodoro Timer - Session #{}{}{}{}",
             app.session_count() + 1,
+            task_suffix,
             focus_indicator,
             audio_indicator
         ),
@@ -241,7 +247,13 @@ fn render_progress(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_breathing(frame: &mut Frame, app: &App, area: Rect) {
-    // Handle confirmation dialog first (highest priority)
+    // Handle task input modal (highest priority)
+    if app.task_input_active() {
+        render_task_input(frame, app, area);
+        return;
+    }
+
+    // Handle confirmation dialog
     if let Some(dialog) = app.confirmation_dialog() {
         render_confirmation_dialog(frame, dialog, area);
         return;
@@ -1037,6 +1049,44 @@ fn ease_in_out(t: f64) -> f64 {
     } else {
         1.0 - 2.0 * (1.0 - t) * (1.0 - t)
     }
+}
+
+fn render_task_input(frame: &mut Frame, app: &App, area: Rect) {
+    let input_display = format!("{}▌", app.task_input_buffer());
+
+    let widget = Paragraph::new(vec![
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "What are you working on?",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            input_display,
+            Style::default().fg(Color::White),
+        )]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Enter a task name or Jira key (e.g. BOSS-441)",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )]),
+        Line::from(vec![Span::styled(
+            "Enter to confirm · Esc to skip",
+            Style::default().fg(Color::DarkGray),
+        )]),
+    ])
+    .alignment(Alignment::Center)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Task Input"),
+    );
+
+    frame.render_widget(widget, area);
 }
 
 #[cfg(test)]
