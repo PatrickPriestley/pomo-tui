@@ -6,14 +6,21 @@ use ratatui::{
     symbols,
     widgets::{
         canvas::{Canvas, Circle, Context},
-        Block, Borders, Gauge, Paragraph, Row, Table,
+        Bar, BarChart, BarGroup, Block, Borders, Gauge, Paragraph, Row, Table,
     },
 };
 
 pub fn draw(frame: &mut Frame, app: &App) {
-    if app.screen() == Screen::DailySummary {
-        render_daily_summary_screen(frame, app);
-        return;
+    match app.screen() {
+        Screen::DailySummary => {
+            render_daily_summary_screen(frame, app);
+            return;
+        }
+        Screen::WeeklyStats => {
+            render_weekly_stats_screen(frame, app);
+            return;
+        }
+        Screen::Timer => {}
     }
 
     // Check if we have a status message to display
@@ -524,7 +531,10 @@ fn get_wide_controls(app: &App) -> Vec<Line<'static>> {
             Span::styled("Interrupt", Style::default().fg(Color::Magenta)),
             Span::raw(" | "),
             Span::raw("Tab: "),
-            Span::styled("Summary", Style::default().fg(Color::LightBlue)),
+            Span::styled("Daily", Style::default().fg(Color::LightBlue)),
+            Span::raw(" | "),
+            Span::raw("S-Tab: "),
+            Span::styled("Weekly", Style::default().fg(Color::LightBlue)),
         ];
 
         if cfg!(feature = "audio") {
@@ -666,7 +676,7 @@ fn get_medium_controls(app: &App) -> Vec<Line<'static>> {
         second_line.extend(vec![
             Span::raw(" | "),
             Span::raw("Tab: "),
-            Span::styled("Summary", Style::default().fg(Color::LightBlue)),
+            Span::styled("Daily", Style::default().fg(Color::LightBlue)),
         ]);
 
         vec![Line::from(first_line), Line::from(second_line)]
@@ -745,7 +755,7 @@ fn get_narrow_controls(app: &App) -> Vec<Line<'static>> {
                 Span::styled("Reset", Style::default().fg(Color::Yellow)),
                 Span::raw(" | "),
                 Span::raw("Tab: "),
-                Span::styled("Summary", Style::default().fg(Color::LightBlue)),
+                Span::styled("Daily", Style::default().fg(Color::LightBlue)),
             ]),
             Line::from(vec![
                 Span::raw("S: "),
@@ -1271,11 +1281,159 @@ fn render_daily_summary_screen(frame: &mut Frame, app: &App) {
 
     // Controls
     let controls = Paragraph::new(vec![Line::from(vec![
-        Span::raw("Tab/Esc: "),
-        Span::styled("Back to Timer", Style::default().fg(Color::Green)),
+        Span::raw("Tab: "),
+        Span::styled("Weekly", Style::default().fg(Color::LightBlue)),
+        Span::raw("  |  "),
+        Span::raw("S-Tab: "),
+        Span::styled("Timer", Style::default().fg(Color::Green)),
+        Span::raw("  |  "),
+        Span::raw("Esc: "),
+        Span::styled("Timer", Style::default().fg(Color::Green)),
         Span::raw("  |  "),
         Span::raw("↑↓: "),
         Span::styled("Scroll", Style::default().fg(Color::Cyan)),
+        Span::raw("  |  "),
+        Span::raw("Q: "),
+        Span::styled("Quit", Style::default().fg(Color::Red)),
+    ])])
+    .alignment(Alignment::Center)
+    .block(Block::default().borders(Borders::ALL).title("Controls"));
+    frame.render_widget(controls, chunks[3]);
+}
+
+fn render_weekly_stats_screen(frame: &mut Frame, app: &App) {
+    use crate::utils::{
+        weekly_best_day, weekly_completion_rate, weekly_daily_average_seconds,
+        weekly_interruptions_per_session, weekly_session_count, weekly_total_interruptions,
+        weekly_total_seconds,
+    };
+
+    let area = frame.size();
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(3),  // title
+            Constraint::Min(10),   // bar chart
+            Constraint::Length(5), // stats
+            Constraint::Length(3), // controls
+        ])
+        .split(area);
+
+    let stats = app.weekly_stats();
+
+    // Title — date range
+    let title_text = if stats.len() == 7 {
+        let start = stats[0].date.format("%a %b %d");
+        let end = stats[6].date.format("%a %b %d");
+        format!("Weekly Stats — {} – {}", start, end)
+    } else {
+        "Weekly Stats".to_string()
+    };
+    let title = Paragraph::new(title_text)
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL));
+    frame.render_widget(title, chunks[0]);
+
+    // Bar chart
+    let has_sessions = stats.iter().any(|s| s.session_count > 0);
+
+    if !has_sessions {
+        let empty = Paragraph::new("No sessions this week yet.\nComplete a Pomodoro to start tracking.")
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL).title("Focus Time"));
+        frame.render_widget(empty, chunks[1]);
+    } else {
+        let bars: Vec<Bar> = stats
+            .iter()
+            .map(|day| {
+                let minutes = day.total_seconds as u64 / 60;
+                let label = day.date.format("%a").to_string();
+                let text_val = if minutes > 0 {
+                    format_duration(day.total_seconds)
+                } else {
+                    String::new()
+                };
+                let style = match day.session_count {
+                    0 => Style::default().fg(Color::DarkGray),
+                    1..=2 => Style::default().fg(Color::Blue),
+                    3..=4 => Style::default().fg(Color::Cyan),
+                    _ => Style::default().fg(Color::Green),
+                };
+
+                Bar::default()
+                    .value(minutes)
+                    .label(Line::from(label))
+                    .text_value(text_val)
+                    .style(style)
+            })
+            .collect();
+
+        let max_minutes = stats.iter().map(|s| s.total_seconds as u64 / 60).max().unwrap_or(1);
+        let chart_max = max_minutes + (max_minutes / 4).max(5); // 25% headroom, minimum 5
+
+        let bar_group = BarGroup::default().bars(&bars);
+        let chart = BarChart::default()
+            .block(Block::default().borders(Borders::ALL).title("Focus Time (minutes)"))
+            .data(bar_group)
+            .bar_width(7)
+            .bar_gap(2)
+            .max(chart_max)
+            .value_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            .label_style(Style::default().fg(Color::Gray));
+
+        frame.render_widget(chart, chunks[1]);
+    }
+
+    // Stats section
+    let total = weekly_total_seconds(stats);
+    let sessions = weekly_session_count(stats);
+    let rate = weekly_completion_rate(stats);
+    let avg = weekly_daily_average_seconds(stats);
+    let interruptions = weekly_total_interruptions(stats);
+    let int_per_session = weekly_interruptions_per_session(stats);
+
+    let stats_lines = if sessions == 0 {
+        vec![Line::from("")]
+    } else {
+        let best_str = weekly_best_day(stats)
+            .map(|d| format!("{} {}", d.date.format("%a"), format_duration(d.total_seconds)))
+            .unwrap_or_else(|| "-".to_string());
+
+        vec![
+            Line::from(format!(
+                "This week: {} total · {} sessions · {:.0}% completion",
+                format_duration(total),
+                sessions,
+                rate
+            )),
+            Line::from(format!(
+                "Daily avg: {} · Best day: {}",
+                format_duration(avg),
+                best_str
+            )),
+            Line::from(format!(
+                "Interruptions: {} total · {:.1} per session avg",
+                interruptions, int_per_session
+            )),
+        ]
+    };
+
+    let stats_widget = Paragraph::new(stats_lines)
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL));
+    frame.render_widget(stats_widget, chunks[2]);
+
+    // Controls
+    let controls = Paragraph::new(vec![Line::from(vec![
+        Span::raw("Tab: "),
+        Span::styled("Timer", Style::default().fg(Color::Green)),
+        Span::raw("  |  "),
+        Span::raw("S-Tab: "),
+        Span::styled("Daily", Style::default().fg(Color::LightBlue)),
+        Span::raw("  |  "),
+        Span::raw("Esc: "),
+        Span::styled("Timer", Style::default().fg(Color::Green)),
         Span::raw("  |  "),
         Span::raw("Q: "),
         Span::styled("Quit", Style::default().fg(Color::Red)),
@@ -1315,7 +1473,7 @@ mod tests {
             // Without audio feature, should still have two lines (main controls + Tab/Summary line)
             assert_eq!(controls.len(), 2);
             let second_text = format!("{:?}", controls[1]);
-            assert!(second_text.contains("Summary"));
+            assert!(second_text.contains("Daily"));
         }
     }
 

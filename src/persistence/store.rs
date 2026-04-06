@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use chrono::{DateTime, Local, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, Local, NaiveDate, NaiveTime, TimeZone, Utc};
 use rusqlite::{params, Connection};
 
 use super::migrations;
-use super::models::{CompletedSession, StoredInterruption, StoredSession};
+use super::models::{CompletedSession, DaySummary, StoredInterruption, StoredSession};
 
 pub struct SessionStore {
     conn: Connection,
@@ -165,6 +165,81 @@ impl SessionStore {
 
         rows.collect()
     }
+
+    /// Returns aggregated stats per day for the last 7 days (including today).
+    /// Always returns exactly 7 entries, oldest first. Days with no sessions are zeroed.
+    pub fn sessions_this_week(&self) -> Result<Vec<DaySummary>, rusqlite::Error> {
+        let today_local = Local::now().date_naive();
+        let week_start = today_local - Duration::days(6);
+
+        let start_of_week = week_start.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+        let end_of_today = today_local.and_time(NaiveTime::from_hms_opt(23, 59, 59).unwrap());
+
+        let start_utc = Local
+            .from_local_datetime(&start_of_week)
+            .single()
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(Utc::now);
+        let end_utc = Local
+            .from_local_datetime(&end_of_today)
+            .single()
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(Utc::now);
+
+        let mut stmt = self.conn.prepare(
+            "SELECT completed_at, duration_seconds, interruption_count, was_completed
+             FROM sessions
+             WHERE completed_at >= ?1 AND completed_at <= ?2
+             ORDER BY completed_at ASC",
+        )?;
+
+        // Initialize 7 days of zeroed summaries
+        let mut summaries: Vec<DaySummary> = (0..7)
+            .map(|i| DaySummary {
+                date: week_start + Duration::days(i),
+                total_seconds: 0,
+                session_count: 0,
+                completed_count: 0,
+                interruption_count: 0,
+            })
+            .collect();
+
+        // Build a lookup from date -> index
+        let date_to_index: std::collections::HashMap<NaiveDate, usize> = summaries
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.date, i))
+            .collect();
+
+        let rows = stmt.query_map(
+            params![start_utc.to_rfc3339(), end_utc.to_rfc3339()],
+            |row| {
+                let completed_at_str: String = row.get(0)?;
+                let duration_seconds: u32 = row.get(1)?;
+                let interruption_count: u32 = row.get(2)?;
+                let was_completed_int: i32 = row.get(3)?;
+
+                Ok((completed_at_str, duration_seconds, interruption_count, was_completed_int != 0))
+            },
+        )?;
+
+        for row_result in rows {
+            let (completed_at_str, duration_secs, interruptions, was_completed) = row_result?;
+            if let Ok(dt) = DateTime::parse_from_rfc3339(&completed_at_str) {
+                let local_date = dt.with_timezone(&Local).date_naive();
+                if let Some(&idx) = date_to_index.get(&local_date) {
+                    summaries[idx].total_seconds += duration_secs;
+                    summaries[idx].session_count += 1;
+                    if was_completed {
+                        summaries[idx].completed_count += 1;
+                    }
+                    summaries[idx].interruption_count += interruptions;
+                }
+            }
+        }
+
+        Ok(summaries)
+    }
 }
 
 #[cfg(test)]
@@ -305,5 +380,65 @@ mod tests {
         assert_eq!(interruptions[0].label, "Slack ping");
         assert_eq!(interruptions[1].label, "context switch");
         assert_eq!(interruptions[2].label, "");
+    }
+
+    #[test]
+    fn test_sessions_this_week_empty() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let stats = store.sessions_this_week().unwrap();
+        assert_eq!(stats.len(), 7);
+        assert!(stats.iter().all(|s| s.session_count == 0));
+        assert!(stats.iter().all(|s| s.total_seconds == 0));
+    }
+
+    #[test]
+    fn test_sessions_this_week_seven_days() {
+        let store = SessionStore::open_in_memory().unwrap();
+        store.record_session(&make_session(true)).unwrap();
+        let stats = store.sessions_this_week().unwrap();
+        assert_eq!(stats.len(), 7);
+    }
+
+    #[test]
+    fn test_sessions_this_week_groups_by_day() {
+        let store = SessionStore::open_in_memory().unwrap();
+
+        // Record 3 sessions "today"
+        for _ in 0..3 {
+            store.record_session(&make_session(true)).unwrap();
+        }
+
+        let stats = store.sessions_this_week().unwrap();
+        // Last entry should be today with 3 sessions
+        let today = stats.last().unwrap();
+        assert_eq!(today.session_count, 3);
+        assert_eq!(today.total_seconds, 3 * 25 * 60);
+        assert_eq!(today.completed_count, 3);
+    }
+
+    #[test]
+    fn test_sessions_this_week_excludes_older() {
+        let store = SessionStore::open_in_memory().unwrap();
+
+        // Record a session "today"
+        store.record_session(&make_session(true)).unwrap();
+
+        // Insert a session 8 days ago directly
+        let old = Utc::now() - Duration::days(8);
+        store.conn.execute(
+            "INSERT INTO sessions (started_at, completed_at, duration_seconds, interruption_count, was_completed)
+             VALUES (?1, ?2, ?3, 0, 1)",
+            params![
+                (old - Duration::minutes(25)).to_rfc3339(),
+                old.to_rfc3339(),
+                25 * 60,
+            ],
+        ).unwrap();
+
+        assert_eq!(store.total_session_count().unwrap(), 2);
+
+        let stats = store.sessions_this_week().unwrap();
+        let total_sessions: u32 = stats.iter().map(|s| s.session_count).sum();
+        assert_eq!(total_sessions, 1); // only today's session
     }
 }

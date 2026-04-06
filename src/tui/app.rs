@@ -3,7 +3,7 @@ use crate::audio::{AudioManager, SoundType};
 use crate::core::{BreakActivity, BreakAnimation, BreathingExercise, BreathingPattern, Timer};
 use crate::config::AppConfig;
 use crate::integrations::{DndState, JiraClient, MacOSDndController};
-use crate::persistence::models::StoredSession;
+use crate::persistence::models::{DaySummary, StoredSession};
 use crate::persistence::{CompletedSession, SessionStore};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent},
@@ -63,6 +63,7 @@ pub struct App {
     screen: Screen,
     daily_summary_sessions: Vec<StoredSession>,
     daily_summary_scroll: u16,
+    weekly_stats: Vec<DaySummary>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -80,6 +81,25 @@ pub enum ConfirmationDialog {
 pub enum Screen {
     Timer,
     DailySummary,
+    WeeklyStats,
+}
+
+impl Screen {
+    pub fn next(self) -> Self {
+        match self {
+            Screen::Timer => Screen::DailySummary,
+            Screen::DailySummary => Screen::WeeklyStats,
+            Screen::WeeklyStats => Screen::Timer,
+        }
+    }
+
+    pub fn prev(self) -> Self {
+        match self {
+            Screen::Timer => Screen::WeeklyStats,
+            Screen::DailySummary => Screen::Timer,
+            Screen::WeeklyStats => Screen::DailySummary,
+        }
+    }
 }
 
 impl App {
@@ -176,6 +196,7 @@ impl App {
             screen: Screen::Timer,
             daily_summary_sessions: Vec::new(),
             daily_summary_scroll: 0,
+            weekly_stats: Vec::new(),
         })
     }
 
@@ -256,18 +277,20 @@ impl App {
             return;
         }
 
-        // Daily summary screen — Tab toggles, Esc/q returns, arrows scroll
-        if self.screen == Screen::DailySummary {
+        // Non-Timer screens — Tab cycles forward, BackTab backward, Esc returns to Timer
+        if self.screen != Screen::Timer {
             match key.code {
-                KeyCode::Tab | KeyCode::Esc => self.screen = Screen::Timer,
+                KeyCode::Tab => self.open_screen(self.screen.next()),
+                KeyCode::BackTab => self.open_screen(self.screen.prev()),
+                KeyCode::Esc => self.screen = Screen::Timer,
                 KeyCode::Char('q') => {
                     self.restore_dnd_state();
                     self.should_quit = true;
                 }
-                KeyCode::Up => {
+                KeyCode::Up if self.screen == Screen::DailySummary => {
                     self.daily_summary_scroll = self.daily_summary_scroll.saturating_sub(1);
                 }
-                KeyCode::Down => {
+                KeyCode::Down if self.screen == Screen::DailySummary => {
                     let max = self.daily_summary_sessions.len().saturating_sub(1) as u16;
                     self.daily_summary_scroll = (self.daily_summary_scroll + 1).min(max);
                 }
@@ -461,6 +484,7 @@ impl App {
             #[cfg(feature = "audio")]
             KeyCode::Char('v') => self.play_test_sound(),
             KeyCode::Tab => self.open_daily_summary(),
+            KeyCode::BackTab => self.open_weekly_stats(),
             _ => {}
         }
     }
@@ -1154,6 +1178,14 @@ impl App {
 
     // Screen navigation
 
+    fn open_screen(&mut self, screen: Screen) {
+        match screen {
+            Screen::Timer => self.screen = Screen::Timer,
+            Screen::DailySummary => self.open_daily_summary(),
+            Screen::WeeklyStats => self.open_weekly_stats(),
+        }
+    }
+
     fn open_daily_summary(&mut self) {
         if let Some(ref store) = self.session_store {
             match store.sessions_today() {
@@ -1171,6 +1203,22 @@ impl App {
         }
     }
 
+    fn open_weekly_stats(&mut self) {
+        if let Some(ref store) = self.session_store {
+            match store.sessions_this_week() {
+                Ok(stats) => {
+                    self.weekly_stats = stats;
+                    self.screen = Screen::WeeklyStats;
+                }
+                Err(e) => {
+                    self.status_message = Some(format!("Failed to load stats: {}", e));
+                }
+            }
+        } else {
+            self.status_message = Some("Could not open session database".to_string());
+        }
+    }
+
     pub fn screen(&self) -> Screen {
         self.screen
     }
@@ -1181,6 +1229,10 @@ impl App {
 
     pub fn daily_summary_scroll(&self) -> u16 {
         self.daily_summary_scroll
+    }
+
+    pub fn weekly_stats(&self) -> &[DaySummary] {
+        &self.weekly_stats
     }
 
     pub fn interruption_input_active(&self) -> bool {
@@ -1867,14 +1919,14 @@ mod tests {
     }
 
     #[test]
-    fn test_tab_returns_to_timer() {
+    fn test_tab_cycles_daily_to_weekly() {
         let mut app = App::with_in_memory_store().unwrap();
         app.screen = Screen::DailySummary;
 
         let key_event = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
         app.handle_key(key_event);
 
-        assert_eq!(app.screen(), Screen::Timer);
+        assert_eq!(app.screen(), Screen::WeeklyStats);
     }
 
     #[test]
@@ -2038,5 +2090,52 @@ mod tests {
         assert_eq!(app.interruption_count(), 0);
         assert!(!app.interruption_input_active());
         assert!(app.interruption_input_buffer().is_empty());
+    }
+
+    #[test]
+    fn test_screen_next_cycles() {
+        assert_eq!(Screen::Timer.next(), Screen::DailySummary);
+        assert_eq!(Screen::DailySummary.next(), Screen::WeeklyStats);
+        assert_eq!(Screen::WeeklyStats.next(), Screen::Timer);
+    }
+
+    #[test]
+    fn test_screen_prev_cycles() {
+        assert_eq!(Screen::Timer.prev(), Screen::WeeklyStats);
+        assert_eq!(Screen::WeeklyStats.prev(), Screen::DailySummary);
+        assert_eq!(Screen::DailySummary.prev(), Screen::Timer);
+    }
+
+    #[test]
+    fn test_tab_cycles_weekly_to_timer() {
+        let mut app = App::with_in_memory_store().unwrap();
+        app.screen = Screen::WeeklyStats;
+
+        let key_event = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        app.handle_key(key_event);
+
+        assert_eq!(app.screen(), Screen::Timer);
+    }
+
+    #[test]
+    fn test_backtab_from_timer_opens_weekly() {
+        let mut app = App::with_in_memory_store().unwrap();
+        assert_eq!(app.screen(), Screen::Timer);
+
+        let key_event = KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT);
+        app.handle_key(key_event);
+
+        assert_eq!(app.screen(), Screen::WeeklyStats);
+    }
+
+    #[test]
+    fn test_esc_returns_to_timer_from_weekly() {
+        let mut app = App::with_in_memory_store().unwrap();
+        app.screen = Screen::WeeklyStats;
+
+        let key_event = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        app.handle_key(key_event);
+
+        assert_eq!(app.screen(), Screen::Timer);
     }
 }
